@@ -1,0 +1,275 @@
+# #############################################################################
+#
+#  main.kv - Kivy-Language GUI definition for AssignmentTracker app
+#
+#  AssignmentTracker is developed for Nevada County Sheriff's Search and Rescue
+#    Copyright (c) 2020 Tom Grundy
+#
+#  http://github.com/ncssar/AssignmentTracker
+#
+#  Contact the author at nccaves@yahoo.com
+#   Attribution, feedback, bug reports and feature requests are appreciated
+#
+# see main.py for revision history
+#
+# #############################################################################
+
+#:import Window kivy.core.window.Window            
+            
+<ButtonWithImage@Button>:
+    source: None
+    Image:
+        source: self.parent.source
+        pos: self.parent.pos
+        height: self.parent.height*0.75
+
+<ButtonWithFourImages@Button>:
+    source1: 'images/blank_64x64.png'
+    source2: 'images/blank_64x64.png'
+    source3: 'images/blank_64x64.png'
+    source4: 'images/blank_64x64.png'
+    BoxLayout:
+        orientation: 'horizontal'
+        pos: self.parent.pos
+        height: self.parent.height
+        Image:
+            source: self.parent.parent.source1
+            pos: self.parent.pos
+            height: self.parent.height*0.75
+        Image:
+            source: self.parent.parent.source2
+            pos: self.parent.parent.pos
+            height: self.parent.height*0.75
+        Image:
+            source: self.parent.parent.source3
+            pos: self.parent.parent.pos
+            height: self.parent.height*0.75
+        Image:
+            source: self.parent.parent.source4
+            pos: self.parent.parent.pos
+            height: self.parent.height*0.75
+            
+<MyButton@Button>:
+    text: 'My Key'
+    font_size: min(self.height*app.defaultTextHeightMultiplier,self.parent.parent.height*0.05)
+    halign:'center'
+    valign:'middle'
+    on_press: app.keyDown(self.text)
+
+<MyRV@RecycleView>:
+    viewclass: 'Label'
+    RecycleGridLayout:
+        cols: 1
+        default_size: None, dp(26)
+        default_size_hint: 1, None
+        size_hint_y: None
+        height: self.minimum_height
+        orientation: 'vertical'
+
+<YesNoSwitch@Switch>:
+    canvas:
+        Color:
+            rgb: 1,1,1
+        Rectangle:
+            source: 'images/switch.jpg'
+            size: sp(83),sp(32)
+            pos: int(self.center_x-sp(41)),int(self.center_y-sp(16))
+        Rectangle:
+            source: 'images/switch_slider.jpg' # make or download your slider jpg
+            size: sp(43), sp(32)
+            pos: int(self.center_x - sp(41) + self.active_norm_pos * sp(41)), int(self.center_y - sp(16))
+            
+# <KeypadButton@Button>:
+#     id: keypadbutton
+#     size_hint: None, None
+#     height:'64sp'
+#     width:'64sp'
+#     pos: int(self.center_x - sp(64) + self.active_norm_pos * sp(64)), int(self.center_y - sp(32))
+#     background_normal: 'images/keypad_64x64_white.png'
+#     on_press:app.switchToBlankKeypad()     
+
+<KeypadButton@Button>:
+    id: keypadbutton
+    on_press:app.switchToBlankKeypad()
+    size_hint:None,1
+    height: self.parent.height
+    background_color:0,0,0,1
+    Image:
+        source: 'images/keypad_white_64x64.png'
+#         x: self.parent.x + (self.parent.width/2) - (self.width/2)
+#         y: self.parent.y + (self.parent.height/2) - (self.height/2)
+        center: self.parent.center
+   
+<ListButton@Button>:
+    size_hint: None, None
+    height:64
+    width:64
+    background_normal: 'images/list_white_64x64.png'
+    on_press:app.showList()
+
+<DetailsButton@Button>:
+    size_hint: None, None
+    height:64
+    width:64
+    background_normal: 'images/gear_white_64x64.png'
+    on_press:app.showDetails()
+
+<SelectableLabel>:
+    bg: 0,0,0,0
+    canvas.before:
+        Color:
+            rgba: (0,0.9,0.1,0.3) if self.selected else self.bg
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            
+<ClockText>:
+
+<TopBar>:
+    size_hint_y: 0.06
+    spacing: 10
+    BoxLayout:
+        orientation: 'horizontal'
+        Label:
+            id: headerLabel
+            halign: 'left'
+            font_size: self.height*0.2
+            text: ''
+            size_x: 500
+#                 size_hint_x: 0.2
+        MyButton:
+            id: syncButton
+            text: ''
+            background_normal: ''
+            background_color: (0,0,0,1)
+            color: (0,0,0,0)
+            size_x:120
+            Image:
+                id: syncButtonImage
+                source: 'images/cloud.png'
+                x: self.parent.x + (self.parent.width/2) - (self.width/2)
+                y: self.parent.y
+                height: self.parent.height*0.5
+#             Label:
+#                 id: syncLabel
+#                 halign: 'left'
+#                 font_size: self.height*0.2
+#                 text: ''
+#                 size_x: 300
+#                 size_hint_x: 0.2
+#             Label:
+#                 size_hint_x: 0.2
+        ClockText:
+            id: clocktext
+            font_size: self.height*0.4
+#                 size_x: 400
+#                 size_hint_x: 0.4
+#             Label:
+#                 size_hint_x: 0.8
+        # show and hide the buttons depending on current screen
+        ListButton:
+            id: listbutton
+        KeypadButton:
+            id: keypadbutton
+        DetailsButton:
+            id: detailsbutton
+
+<ViewSwitcher@BoxLayout>:
+    BoxLayout:
+        orientation: 'horizontal'
+        Button:
+            id: teamsViewButton
+            text: 'Teams'
+            on_press: app.showTeams()
+        Button:
+            id: assignmentsViewButton
+            text: 'Assignments'
+            on_press: app.showAssignments()
+
+<TeamsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: None
+            orientation: 'vertical'
+            Label:
+                text: 'This device is assigned to'
+                font_size: '10sp'
+            Label:
+                text: 'RESOURCE UNIT'
+                font_size: '50sp'
+        ViewSwitcher:
+            size_hint_y: 0.1
+            id: viewSwitcher
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+            orientation: 'horizontal'
+            Label:
+                text: 'Team'
+            Label:
+                text: 'Status'
+            Label:
+                text: 'Resource'
+            Label:
+                text: 'Current'
+            Label:
+                text: 'Previous'
+        BoxLayout:
+            size_hint_y: 0.9
+            RecycleView:
+                viewclass: 'SelectableLabel'
+                id: teamsRV
+                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.teamsRVList]
+                SelectableRecycleGridLayout:
+                    id: teamsLayout
+                    cols: 5
+                    size_hint_y: None
+                    default_size: None, dp(32)
+                    default_size_hint: 1, None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    multiselect: False
+
+<AssignmentsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: None
+            orientation: 'vertical'
+            Label:
+                text: 'This device is assigned to'
+                font_size: '10sp'
+            Label:
+                text: 'RESOURCE UNIT'
+                font_size: '50sp'
+        ViewSwitcher:
+            size_hint_y: 0.1
+            id: viewSwitcher
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+            orientation: 'horizontal'
+            Label:
+                text: 'Assignment'
+            Label:
+                text: 'Team'
+            Label:
+                text: 'Status'
+            Label:
+                text: 'Resource'
+        BoxLayout:
+            size_hint_y: 0.9
+            RecycleView:
+                viewclass: 'SelectableLabel'
+                id: teamsRV
+                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentsRVList]
+                SelectableRecycleGridLayout:
+                    id: assignmentsLayout
+                    cols: 4
+                    size_hint_y: None
+                    default_size: None, dp(32)
+                    default_size_hint: 1, None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    multiselect: False
