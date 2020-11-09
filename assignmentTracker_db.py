@@ -31,21 +31,17 @@ TEAM_COLS=[
     ["TeamName","TEXT"],
     ["TeamStatus","TEXT"],
     ["Resource","TEXT"],
-    ["CurrentAssignments","TEXT"], # really a list, stored as json serialized text
-    ["PreviousAssignments","TEXT"], # really a list, stored as json serialized text
-    ["TeamHistory","TEXT"]] # really a list, stored as json serialized text
+    ["CurrentAssignments","TEXT"], # comma-delimited string
+    ["CompletedAssignments","TEXT"]] # comma-delimited string
 
 ASSIGNMENT_COLS=[ # don't try to store any pairing data in this table (except in history)
     # AssignmentID is hardcoded as the primary key
     ["AssignmentName","TEXT"],
-    ["IntendedResource","TEXT"],
-    ["AssignmentStatus","TEXT"], # basically the same as sartopo assignment status
-    ["AssignmentHistory","TEXT"]] # really a list, stored as json serialized text
+    ["AssignmentStatus","TEXT"],
+    ["IntendedResource","TEXT"]] # basically the same as sartopo assignment status
 
-# how to store history?  One history table for each team and each assignment,
-#  or just one top-level history table?  Since viewing of history will normally
-#  be done per-assignment or per-team, it would make sense to have a table
-#  for each item; but the storage task becomes more complex / riskier to manage
+# one history table for each team, and one history table for each assignment;
+#   hostory table name includes teamID or assignmentID
 
 TEAM_HISTORY_COLS=[
     ["Epoch","INTEGER"],
@@ -83,13 +79,13 @@ def q(query,params=None):
     return r
 
 def createTeamsTableIfNeeded():
-    colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT"
+    colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in TEAM_COLS])
     query='CREATE TABLE IF NOT EXISTS "Teams" ('+colString+');'
     return q(query)
 
 def createAssignmentsTableIfNeeded():
-    colString="'AssignmentID' INTEGER PRIMARY KEY AUTOINCREMENT"
+    colString="'AssignmentID' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in ASSIGNMENT_COLS])
     query='CREATE TABLE IF NOT EXISTS "Assignments" ('+colString+');'
     return q(query)
@@ -147,17 +143,30 @@ def qInsert(tableName,d):
 #   return = dictionary so that the caller can validate the added event   
 def tdbNewTeam(d):
     createTeamsTableIfNeeded()
-    d["createdEpoch"]=time.time()
     qInsert("Teams",d)
+    # # create the team's history table
+    # tableName=d["TeamName"]+"History"
+    # colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT"
+    # colString+=', '.join([str(x[0])+" "+str(x[1]) for x in TEAM_HISTORY_COLS])
+    # query='CREATE TABLE IF NOT EXISTS "'+tableName+'" ('+colString+');'
+    # q(query)
+    # tdbAddTeamHistoryEntry({
+    #         'TeamName':teamName,
+    #         'Event':"Team Created",
+    #         'Epoch':time.time(),
+    #         'RecordedBy':'system'})
+    # validate
     r=q("SELECT * FROM Teams ORDER BY TeamID DESC LIMIT 1;")
     validate=r[0]
     return {'validate':validate}
 
+# def tdbAddHistoryEntry(d):
+#     teamID=tdbGetTeamID(d["TeamName"])
+#     qInsert()
 def tdbNewAssignment(d):
     createAssignmentsTableIfNeeded()
-    d["createdEpoch"]=time.time()
     qInsert("Assignments",d)
-    r=q("SELECT * FROM Assignments ORDER BY TeamID DESC LIMIT 1;")
+    r=q("SELECT * FROM Assignments ORDER BY AssignmentID DESC LIMIT 1;")
     validate=r[0]
     return {'validate':validate}
 
@@ -166,16 +175,24 @@ def tdbHome():
     return '''<h1>AssignmentTracker Database API</h1>
             <p>API for interacting with the Assignment Tracker databases</p>'''
 
-# tdbGetTeams - query the Teams table
 def tdbGetTeams(teamID=None):
     createTeamsTableIfNeeded()
     if teamID:
-        condition="TeamID="+str(teamID)
+        condition='TeamID='+str(teamID)
     else:
-        condition="createdEpoch > '0'"
+        condition='1'
     return q("SELECT * FROM 'Teams' WHERE {condition};".format(
             condition=condition))
 
+def tdbGetAssignments(assignmentID=None):
+    createAssignmentsTableIfNeeded()
+    if assignmentID:
+        condition='AssigmentID='+str(assignmentID)
+    else:
+        condition='1'
+    return q("SELECT * FROM 'Assignments' WHERE {condition};".format(
+            condition=condition))
+    
 def tdbUpdateTeamLastEditEpoch(teamID):
     query="UPDATE 'Teams' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE TeamID = "+str(teamID)+";"
     return q(query)
@@ -187,84 +204,84 @@ def tdbUpdateTeamLastEditEpoch(teamID):
 #  note: only store inEpoch to the nearest hundredth of a second since
 #  comparison beyond 5-digits-right-of-decimal has shown truncation differences
 
-def sdbAddOrUpdate(eventID,d):
-#     app.logger.info("put1")
-#     app.logger.info("put called for event "+str(eventID))
-#     if not request.json:
-#         app.logger.info("no json")
-#         return "<h1>400</h1><p>Request has no json payload.</p>", 400
-#     if type(request.json) is str:
-#         d=json.loads(request.json)
-#     else: #kivy UrlRequest sends the dictionary itself
-#         d=request.json
+# def sdbAddOrUpdate(eventID,d):
+# #     app.logger.info("put1")
+# #     app.logger.info("put called for event "+str(eventID))
+# #     if not request.json:
+# #         app.logger.info("no json")
+# #         return "<h1>400</h1><p>Request has no json payload.</p>", 400
+# #     if type(request.json) is str:
+# #         d=json.loads(request.json)
+# #     else: #kivy UrlRequest sends the dictionary itself
+# #         d=request.json
 
-#     d['InEpoch']=round(d['InEpoch'],2)
-#     d['OutEpocj']=round(d['OutEpoch'],2)
+# #     d['InEpoch']=round(d['InEpoch'],2)
+# #     d['OutEpocj']=round(d['OutEpoch'],2)
 
-    # query builder from a dictionary that allows for different data types
-    #  https://stackoverflow.com/a/54611514/3577105
-#     colVal="({columns}) VALUES {values}".format(
-#                 columns=', '.join(d.keys()),
-#                 values=tuple(d.values())
-#             )
-#     colList="({columns})".format(
-#                 columns=', '.join(d.keys()))
-#     valList="{values}".format(
-#                 values=tuple(d.values()))
-    # 1. find any record(s) that should be modified
-    tablename=str(eventID)+"_SignIn"
-    condition="ID = '{id}' AND Name = '{name}' AND Agency = '{agency}' AND InEpoch = '{inEpoch}'".format(
-            id=d['ID'],name=d['Name'],agency=d['Agency'],inEpoch=d['InEpoch'])
-    query="SELECT * FROM '{tablename}' WHERE {condition};".format(
-            tablename=tablename,condition=condition)
-#     app.logger.info('query:'+query)
-    r=q(query)
-#     app.logger.info("result:"+str(r))
-    if len(r)==0: # no results: this is a new sign-in; add a new record
-        # query builder from a dictionary that allows for different data types
-        #  https://stackoverflow.com/a/54611514/3577105
-#         query="INSERT INTO {tablename} ({columns}) VALUES {values};" .format(
-#                 tablename='SignIn',
-#                 columns=', '.join(d.keys()),
-#                 values=tuple(d.values())
-#             )
-#         query="INSERT INTO {tablename} {colList} VALUES {valList};".format(
-#                 tablename='SignIn',
-#                 colList=colList,
-#                 valList=valList)
-#         app.logger.info("query string: "+query)
+#     # query builder from a dictionary that allows for different data types
+#     #  https://stackoverflow.com/a/54611514/3577105
+# #     colVal="({columns}) VALUES {values}".format(
+# #                 columns=', '.join(d.keys()),
+# #                 values=tuple(d.values())
+# #             )
+# #     colList="({columns})".format(
+# #                 columns=', '.join(d.keys()))
+# #     valList="{values}".format(
+# #                 values=tuple(d.values()))
+#     # 1. find any record(s) that should be modified
+#     tablename=str(eventID)+"_SignIn"
+#     condition="ID = '{id}' AND Name = '{name}' AND Agency = '{agency}' AND InEpoch = '{inEpoch}'".format(
+#             id=d['ID'],name=d['Name'],agency=d['Agency'],inEpoch=d['InEpoch'])
+#     query="SELECT * FROM '{tablename}' WHERE {condition};".format(
+#             tablename=tablename,condition=condition)
+# #     app.logger.info('query:'+query)
+#     r=q(query)
+# #     app.logger.info("result:"+str(r))
+#     if len(r)==0: # no results: this is a new sign-in; add a new record
+#         # query builder from a dictionary that allows for different data types
+#         #  https://stackoverflow.com/a/54611514/3577105
+# #         query="INSERT INTO {tablename} ({columns}) VALUES {values};" .format(
+# #                 tablename='SignIn',
+# #                 columns=', '.join(d.keys()),
+# #                 values=tuple(d.values())
+# #             )
+# #         query="INSERT INTO {tablename} {colList} VALUES {valList};".format(
+# #                 tablename='SignIn',
+# #                 colList=colList,
+# #                 valList=valList)
+# #         app.logger.info("query string: "+query)
+# #         q(query)
+#         qInsert(tablename,d)
+#         sdbUpdateLastEditEpoch(eventID)
+#     elif len(r)==1: # one result found; this is a sign-out, status udpate, etc; modify existing record
+#         # UPDATE .. SET () = () syntax is only supported for sqlite3 3.15.0 and up;
+#         #  pythonanywhere only has 3.11.0, so, use simpler queries instead
+# #       query="UPDATE {tablename} SET {colList} = {valList} WHERE {condition};".format(
+# #               tablename='SignIn',
+# #               colList=colList,
+# #               valList=valList,
+# #               condition=condition)
+#         query="UPDATE '{tablename}' SET ".format(tablename=tablename)
+#         for key in d.keys():
+#             query+="{col} = '{val}', ".format(
+#                 col=key,
+#                 val=d[key])
+#         query=query[:-2] # get rid of the final comma and space
+#         query+=" WHERE {condition};".format(condition=condition)
+# #         app.logger.info("query string: "+query)
 #         q(query)
-        qInsert(tablename,d)
-        sdbUpdateLastEditEpoch(eventID)
-    elif len(r)==1: # one result found; this is a sign-out, status udpate, etc; modify existing record
-        # UPDATE .. SET () = () syntax is only supported for sqlite3 3.15.0 and up;
-        #  pythonanywhere only has 3.11.0, so, use simpler queries instead
-#       query="UPDATE {tablename} SET {colList} = {valList} WHERE {condition};".format(
-#               tablename='SignIn',
-#               colList=colList,
-#               valList=valList,
-#               condition=condition)
-        query="UPDATE '{tablename}' SET ".format(tablename=tablename)
-        for key in d.keys():
-            query+="{col} = '{val}', ".format(
-                col=key,
-                val=d[key])
-        query=query[:-2] # get rid of the final comma and space
-        query+=" WHERE {condition};".format(condition=condition)
-#         app.logger.info("query string: "+query)
-        q(query)
-        sdbUpdateLastEditEpoch(eventID)
-    else:
-        return {'error': 'more than one record in the host database matched the ID,Name,Agency,InEpoch values from the sign-in action'}, 405
+#         sdbUpdateLastEditEpoch(eventID)
+#     else:
+#         return {'error': 'more than one record in the host database matched the ID,Name,Agency,InEpoch values from the sign-in action'}, 405
 
-    # now get the same record(s) from the local (host) db so the downstream tool can validate
-    #  note that it should only return one record; the downstream tool should check
-    validate=q("SELECT * FROM '{tablename}' WHERE {condition};".format(
-            tablename=tablename,
-            condition=condition))
+#     # now get the same record(s) from the local (host) db so the downstream tool can validate
+#     #  note that it should only return one record; the downstream tool should check
+#     validate=q("SELECT * FROM '{tablename}' WHERE {condition};".format(
+#             tablename=tablename,
+#             condition=condition))
 
-    # in url request context, we want to return a full flask jsonify object and a response code
-    #  but since we are not using flask here, just return a dictionary and a response code,
-    #  and any downstream tool that needs to send json will have to jsonify the dictionary
-#     return jsonify({'query': query,'validate': validate}), 200
-    return {'query': query,'validate': validate}
+#     # in url request context, we want to return a full flask jsonify object and a response code
+#     #  but since we are not using flask here, just return a dictionary and a response code,
+#     #  and any downstream tool that needs to send json will have to jsonify the dictionary
+# #     return jsonify({'query': query,'validate': validate}), 200
+#     return {'query': query,'validate': validate}

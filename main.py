@@ -47,7 +47,7 @@ import certifi # attempt to fix SSL shared-token problem on Android
 # from plyer import wifi
 
 # # database interface module shared by this app and the assignmentTracker_api
-# from assignmentTracker_db import *
+from assignmentTracker_db import *
 
 import kivy
 kivy.require('1.9.1')
@@ -69,7 +69,7 @@ from kivy.uix.image import Image
 from kivy.uix.popup import Popup
 from kivy.uix.dropdown import DropDown
 from kivy.uix.textinput import TextInput
-from kivy.properties import BooleanProperty, ListProperty, StringProperty, ObjectProperty,NumericProperty
+from kivy.properties import BooleanProperty, ListProperty, StringProperty, ObjectProperty, NumericProperty
 from kivy.clock import Clock
 from kivy.utils import platform
 from kivy.core.window import Window
@@ -128,6 +128,10 @@ class assignmentTrackerApp(App):
         self.assignentsList=[]
         self.sm=ScreenManager()
 
+        # start with a clean database every time the app is started
+        #  (need to implement auto-recover)
+        os.remove('tracker.db')
+
         # for each screen, example myScreen1 as instance of class myScreen:
         # 1. define myScreen in .kv
         # 2. class myScreen(Screen) - define any needed properties
@@ -138,14 +142,16 @@ class assignmentTrackerApp(App):
 
         self.sm.add_widget(AssignmentsScreen(name='assignments'))
         self.assignments=self.sm.get_screen('assignments')
-                
-        self.teamsList=[
-            ["101","Working","Ground Type 1","AA","AK"],
-            ["102","Enroute to CP","K9 (HRD)","AB","AG"]]
-        
-        self.assignmentsList=[
-            ["AA","101","Working","Ground Type 1"],
-            ["AB","102","Enroute to CP","K9 (HRD)"]]
+
+        self.newTeam(['101','Working','Ground Type 1','AA','AK'])
+        self.newTeam(['102','Enroute to CP','K9 (HRD)','AB','AG'])
+
+        self.newAssignment(['AA','INPROGRESS','Ground Type 1'])
+        self.newAssignment(['AB','INPROGRESS','K9 (HBD)'])
+        self.newAssignment(['AG','COMPLETED','K9 (HRD)'])
+        self.newAssignment(['AK','COMPLETED','Ground Type 1'])
+        self.newAssignment(['AL','PREPARED','Ground Type 2'])
+        self.newAssignment(['ZZ','PREPARED','Ground Type 2'])
             
         self.showTeams()
         
@@ -161,6 +167,16 @@ class assignmentTrackerApp(App):
         Clock.schedule_once(self.startup,2)
         
         return self.container
+
+    def newTeam(self,theList):
+        r=tdbNewTeam(dict(zip([x[0] for x in TEAM_COLS],theList)))
+        Logger.info("return from newTeam:")
+        Logger.info(r)
+
+    def newAssignment(self,theList):
+        r=tdbNewAssignment(dict(zip([x[0] for x in ASSIGNMENT_COLS],theList)))
+        Logger.info("return from newAssignment:")
+        Logger.info(r)
 
     def startup(self,*args,allowRecoverIfNeeded=True):
         # perform startup tasks here that should take place after the GUI is alive:
@@ -183,10 +199,44 @@ class assignmentTrackerApp(App):
 #         Params = autoclass('android.view.WindowManager$LayoutParams')
 #         PythonActivity.mActivity.getWindow().clearFlags(Params.FLAG_KEEP_SCREEN_ON)
 
+    def buildTeamsList(self):
+        Logger.info("buildTeamsList called")
+        self.teamsList=[]
+        tdbTeams=tdbGetTeams()
+        Logger.info(json.dumps(tdbTeams))
+        for entry in tdbTeams:
+            self.teamsList.append(list(entry.values())[1:])
+        Logger.info("teamsList at end of buildTeamsList:"+str(self.teamsList))
+
+    def buildAssignmentsList(self):
+        Logger.info("buildAssignmentsList called")
+        self.assignmentsList=[]
+        self.completedAssignments=[]
+        tdbTeams=tdbGetTeams()
+        tdbAssignments=tdbGetAssignments()
+        Logger.info(json.dumps(tdbAssignments))
+        for entry in tdbAssignments:
+            assignmentName=entry["AssignmentName"]
+            if entry["AssignmentStatus"]=='COMPLETED':
+                completedTeams=[x for x in tdbTeams if assignmentName in x['CompletedAssignments']]
+                for team in completedTeams:
+                    self.completedAssignments.append([assignmentName,team['TeamName'],'COMPLETED',team['Resource']])
+            else:
+                currentTeams=[x for x in tdbTeams if assignmentName in x['CurrentAssignments']]
+                Logger.info("currentTeams:")
+                Logger.info(currentTeams)
+                if currentTeams:
+                    for team in currentTeams:
+                        self.assignmentsList.append([assignmentName,team['TeamName'],team['TeamStatus'],team['Resource']])
+                else:
+                    self.assignmentsList.append([assignmentName,'---','UNASSIGNED',entry['IntendedResource']])
+        self.assignmentsList+=self.completedAssignments # until a separate list display is arranged
+
     def showTeams(self,*args):
         Logger.info("showTeams called")                    
         self.teams.ids.viewSwitcher.ids.teamsViewButton.font_size='40sp'
         self.teams.ids.viewSwitcher.ids.assignmentsViewButton.font_size='20sp'
+        self.buildTeamsList()
         # recycleview needs a single list of strings; it divides into rows every nth element
         self.teams.teamsRVList=[]
         for entry in self.teamsList:
@@ -199,6 +249,7 @@ class assignmentTrackerApp(App):
         Logger.info("showAssignments called")
         self.assignments.ids.viewSwitcher.ids.teamsViewButton.font_size='20sp'
         self.assignments.ids.viewSwitcher.ids.assignmentsViewButton.font_size='40sp'
+        self.buildAssignmentsList()
         # recycleview needs a single list of strings; it divides into rows every nth element
         self.assignments.assignmentsRVList=[]
         for entry in self.assignmentsList:
