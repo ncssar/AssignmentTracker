@@ -186,21 +186,31 @@
             text: 'Assignments'
             on_press: app.showAssignments()
 
+<DeviceHeader@BoxLayout>:
+    BoxLayout:
+        size_hint_y: None
+        orientation: 'vertical'
+        Label:
+            text: 'This device is assigned to'
+            font_size: '10sp'
+        Label:
+            id: deviceLabel
+            text: 'N/A'
+            font_size: '50sp'
+
 <TeamsScreen>:
     BoxLayout:
         orientation: 'vertical'
-        BoxLayout:
+        DeviceHeader:
             size_hint_y: None
-            orientation: 'vertical'
-            Label:
-                text: 'This device is assigned to'
-                font_size: '10sp'
-            Label:
-                text: 'RESOURCE UNIT'
-                font_size: '50sp'
+            id: deviceHeader
         ViewSwitcher:
             size_hint_y: 0.1
             id: viewSwitcher
+        Button:
+            size_hint_y: 0.1
+            text: 'New Team'
+            on_press: app.showNewTeam()
         BoxLayout:
             size_hint_y: None
             height: 30
@@ -234,18 +244,16 @@
 <AssignmentsScreen>:
     BoxLayout:
         orientation: 'vertical'
-        BoxLayout:
+        DeviceHeader:
             size_hint_y: None
-            orientation: 'vertical'
-            Label:
-                text: 'This device is assigned to'
-                font_size: '10sp'
-            Label:
-                text: 'RESOURCE UNIT'
-                font_size: '50sp'
+            id: deviceHeader
         ViewSwitcher:
             size_hint_y: 0.1
             id: viewSwitcher
+        Button:
+            size_hint_y: 0.1
+            text: 'New Assignment'
+            on_press: app.showNewAssignment()
         BoxLayout:
             size_hint_y: None
             height: 30
@@ -273,3 +281,29 @@
                     height: self.minimum_height
                     orientation: 'vertical'
                     multiselect: False
+
+<NewTeamScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: 'New Team'
+            font_size: '30sp'
+        Button:
+            text: 'Use next callsign'
+            on_press: app.newTeam()
+        Button:
+            text: 'Close'
+            on_press: app.showTeams()
+
+<NewAssignmentScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            text: 'New Assignment'
+            font_size: '30sp'
+        Button:
+            text: 'Use next name'
+            on_press: app.newAssignment()
+        Button:
+            text: 'Close'
+            on_press: app.showAssignments()

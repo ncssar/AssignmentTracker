@@ -130,8 +130,12 @@ class assignmentTrackerApp(App):
 
         # start with a clean database every time the app is started
         #  (need to implement auto-recover)
-        os.remove('tracker.db')
+        if os.path.exists('tracker.db'):
+            os.remove('tracker.db')
 
+        self.device='SITUATION UNIT'
+        self.nextCallsign='103'
+        self.assignmentNamePool=[chr(a)+chr(b) for a in range(65,91) for b in range(65,91)] # AA..AZ,BA..BZ,..
         # for each screen, example myScreen1 as instance of class myScreen:
         # 1. define myScreen in .kv
         # 2. class myScreen(Screen) - define any needed properties
@@ -140,8 +144,18 @@ class assignmentTrackerApp(App):
         self.sm.add_widget(TeamsScreen(name='teams'))
         self.teams=self.sm.get_screen('teams')
 
+        self.teams.ids.deviceHeader.ids.deviceLabel.text=self.device
+
         self.sm.add_widget(AssignmentsScreen(name='assignments'))
         self.assignments=self.sm.get_screen('assignments')
+
+        self.assignments.ids.deviceHeader.ids.deviceLabel.text=self.device
+
+        self.sm.add_widget(NewTeamScreen(name='newTeamScreen'))
+        self.newTeamScreen=self.sm.get_screen('newTeamScreen')
+
+        self.sm.add_widget(NewAssignmentScreen(name='newAssignmentScreen'))
+        self.newAssignmentScreen=self.sm.get_screen('newAssignmentScreen')
 
         self.newTeam(['101','Working','Ground Type 1','AA','AK'])
         self.newTeam(['102','Enroute to CP','K9 (HRD)','AB','AG'])
@@ -168,12 +182,28 @@ class assignmentTrackerApp(App):
         
         return self.container
 
-    def newTeam(self,theList):
+    def newTeam(self,theList=[]):
+        if len(theList)<5: # simple team; ground-2, next callsign
+            theList=[self.nextCallsign,'UNASSIGNED','Ground Type 2','--','--']
+            self.incrementNextCallsign()
         r=tdbNewTeam(dict(zip([x[0] for x in TEAM_COLS],theList)))
         Logger.info("return from newTeam:")
         Logger.info(r)
+        self.showTeams()
 
-    def newAssignment(self,theList):
+    def incrementNextCallsign(self):
+        if self.nextCallsign.isnumeric():
+            self.nextCallsign=str(int(self.nextCallsign)+1)
+
+    # def assign(self,assignmentName,teamName):
+    #     tdbAssign(assignmentName,teamName)
+
+    def newAssignment(self,theList=[]):
+        Logger.info("newAssignment called")
+        if len(theList)<3: # simple assignment; ground-2, next callsign
+            theList=[self.assignmentNamePool.pop(0),'UNASSIGNED','Ground Type 2']
+        elif theList[0] in self.assignmentNamePool:
+            self.assignmentNamePool.remove(theList[0])
         r=tdbNewAssignment(dict(zip([x[0] for x in ASSIGNMENT_COLS],theList)))
         Logger.info("return from newAssignment:")
         Logger.info(r)
@@ -258,6 +288,14 @@ class assignmentTrackerApp(App):
         self.sm.transition=NoTransition()
         self.sm.current='assignments'
 
+    def showNewTeam(self,*args):
+        Logger.info('showNewTeam called')
+        self.sm.current='newTeamScreen'
+
+    def showNewAssignment(self,*args):
+        Logger.info('showNewAssignment called')
+        self.sm.current='newAssignmentScreen'
+
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
 
 
@@ -322,6 +360,14 @@ class TeamsScreen(Screen):
 
 class AssignmentsScreen(Screen):
     assignmentsRVList=ListProperty([])
+
+
+class NewTeamScreen(Screen):
+    pass
+
+
+class NewAssignmentScreen(Screen):
+    pass
 
 
 if __name__ == '__main__':
