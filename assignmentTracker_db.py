@@ -22,6 +22,7 @@
 import sqlite3
 import json
 import time
+import os
 
 # use one table for teams, one table for assigments, and reduce duplication of data;
 #  store the pairing data in the teams table, not in the assignments table
@@ -29,16 +30,21 @@ import time
 TEAM_COLS=[
     # TeamID is hardcoded as the primary key
     ["TeamName","TEXT"],
-    ["TeamStatus","TEXT"],
-    ["Resource","TEXT"],
-    ["CurrentAssignments","TEXT"], # comma-delimited string
-    ["CompletedAssignments","TEXT"]] # comma-delimited string
+    ["TeamStatus","TEXT DEFAULT 'UNASSIGNED'"],
+    ["Resource","TEXT DEFAULT 'Ground Type 2'"],
+    ["CompletedAssignments","TEXT DEFAULT '--'"]] # comma-delimited string
 
 ASSIGNMENT_COLS=[ # don't try to store any pairing data in this table (except in history)
     # AssignmentID is hardcoded as the primary key
     ["AssignmentName","TEXT"],
-    ["AssignmentStatus","TEXT"],
-    ["IntendedResource","TEXT"]] # basically the same as sartopo assignment status
+    ["AssignmentStatus","TEXT DEFAULT 'UNASSIGNED'"],
+    ["IntendedResource","TEXT DEFAULT 'Ground Type 2'"]] # basically the same as sartopo assignment status
+
+PAIRING_COLS=[
+    ["TeamID","INTEGER"],
+    ["AssignmentID","INTEGER"],
+    ["PairingStatus","TEXT"],
+    ["PreviousFlag","INTEGER DEFAULT 0"]] # 0 = current, 1 = previous
 
 # one history table for each team, and one history table for each assignment;
 #   hostory table name includes teamID or assignmentID
@@ -90,6 +96,20 @@ def createAssignmentsTableIfNeeded():
     query='CREATE TABLE IF NOT EXISTS "Assignments" ('+colString+');'
     return q(query)
 
+def createPairingsTableIfNeeded():
+    colString="'PairingID' INTEGER PRIMARY KEY AUTOINCREMENT,"
+    colString+=', '.join([str(x[0])+" "+str(x[1]) for x in PAIRING_COLS])
+    query='CREATE TABLE IF NOT EXISTS "Pairings" ('+colString+');'
+    return q(query)
+
+def tdbInit():
+    # start with a clean database every time the app is started
+    #  (need to implement auto-recover)
+    if os.path.exists('tracker.db'):
+        os.remove('tracker.db')
+    createTeamsTableIfNeeded()
+    createAssignmentsTableIfNeeded()
+    createPairingsTableIfNeeded()
 
 # intercept any None values and change them to NULL
 # def noneToQuestion(x):
@@ -138,12 +158,9 @@ def qInsert(tableName,d):
 ##   handlers that call this code should perform jsonification, while client
 ##   nodes do not need to do any jsonification
 
-# tdbNewTeam - create a new team
-#   d = dictionary of all required key-value pairs required to create a new team
-#   return = dictionary so that the caller can validate the added event   
-def tdbNewTeam(d):
-    createTeamsTableIfNeeded()
-    qInsert("Teams",d)
+def tdbNewTeam(name,resource):
+    # createTeamsTableIfNeeded()
+    qInsert('Teams',{'TeamName':name,'Resource':resource})
     # # create the team's history table
     # tableName=d["TeamName"]+"History"
     # colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT"
@@ -156,17 +173,14 @@ def tdbNewTeam(d):
     #         'Epoch':time.time(),
     #         'RecordedBy':'system'})
     # validate
-    r=q("SELECT * FROM Teams ORDER BY TeamID DESC LIMIT 1;")
+    r=q('SELECT * FROM Teams ORDER BY TeamID DESC LIMIT 1;')
     validate=r[0]
     return {'validate':validate}
 
-# def tdbAddHistoryEntry(d):
-#     teamID=tdbGetTeamID(d["TeamName"])
-#     qInsert()
-def tdbNewAssignment(d):
-    createAssignmentsTableIfNeeded()
-    qInsert("Assignments",d)
-    r=q("SELECT * FROM Assignments ORDER BY AssignmentID DESC LIMIT 1;")
+def tdbNewAssignment(name,intendedResource):
+    # createAssignmentsTableIfNeeded()
+    qInsert('Assignments',{'AssignmentName':name,'IntendedResource':intendedResource})
+    r=q('SELECT * FROM Assignments ORDER BY AssignmentID DESC LIMIT 1;')
     validate=r[0]
     return {'validate':validate}
 
@@ -175,8 +189,41 @@ def tdbHome():
     return '''<h1>AssignmentTracker Database API</h1>
             <p>API for interacting with the Assignment Tracker databases</p>'''
 
+
+# team getters
+def tdbGetTeamIDByName(teamName):
+    query="SELECT TeamID FROM Teams WHERE TeamName='"+str(teamName)+"';"
+    return q(query)[0].get("TeamID",None)
+
+def tdbGetTeamNameByID(teamID):
+    query="SELECT TeamName FROM Teams WHERE TeamID='"+str(teamID)+"';"
+    return q(query)[0].get("TeamName",None)
+
+def tdbGetTeamStatusByName(teamName):
+    query="SELECT TeamStatus FROM Teams WHERE TeamName='"+str(teamName)+"';"
+    return q(query)[0].get("TeamStatus",None)
+
+def tdbGetTeamResourceByName(teamName):
+    query="SELECT Resource FROM Teams WHERE TeamName='"+str(teamName)+"';"
+    return q(query)[0].get("Resource",None)
+
+
+# assignment getters
+def tdbGetAssignmentNameByID(assignmentID):
+    query="SELECT AssignmentName FROM Assignments WHERE AssignmentID='"+str(assignmentID)+"';"
+    return q(query)[0].get("AssignmentName",None)
+
+def tdbGetAssignmentIDByName(assignmentName):
+    query="SELECT AssignmentID FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"
+    return q(query)[0].get("AssignmentID",None)
+
+def tdbGetAssignmentIntendedResourceByName(assignmentName):
+    query="SELECT IntendedResource FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"
+    return q(query)[0].get("IntendedResource",None)
+
+
 def tdbGetTeams(teamID=None):
-    createTeamsTableIfNeeded()
+    # createTeamsTableIfNeeded()
     if teamID:
         condition='TeamID='+str(teamID)
     else:
@@ -185,16 +232,35 @@ def tdbGetTeams(teamID=None):
             condition=condition))
 
 def tdbGetAssignments(assignmentID=None):
-    createAssignmentsTableIfNeeded()
+    # createAssignmentsTableIfNeeded()
     if assignmentID:
         condition='AssigmentID='+str(assignmentID)
     else:
         condition='1'
     return q("SELECT * FROM 'Assignments' WHERE {condition};".format(
             condition=condition))
-    
+
+def tdbGetPairings():
+    return q("SELECT * FROM 'Pairings';")
+
+def tdbSetTeamStatusByName(teamName,status):
+    query="UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamName = '"+str(teamName)+"';"
+    print(query)
+    return q(query)
+
+def tdbSetAssignmentStatusByName(assignmentName,status):
+    query="UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE AssignmentName = '"+str(assignmentName)+"';"
+    return q(query)
+
+def tdbPair(assignmentID,teamID):
+    # query="UPDATE 'Teams' SET CurrentAssignments = "+str(assignmentID)+" WHERE TeamID="+str(teamID)+";"
+    # query="UPDATE 'Pairings' SET TeamID = "+str(teamID)+" WHERE AssignmentID = "+str(assignmentID)+";"
+    # query="INSERT INTO 'Pairings' (AssignmentID,TeamID) VALUES("+str(assignmentID)+","+str(teamID)+");"
+    # return q(query)
+    return qInsert('Pairings',{'AssignmentID':assignmentID,'TeamID':teamID})
+
 def tdbUpdateTeamLastEditEpoch(teamID):
-    query="UPDATE 'Teams' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE TeamID = "+str(teamID)+";"
+    query="UPDATE 'Teams' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE TeamID="+str(teamID)+";"
     return q(query)
 
 # it's cleaner to let the host decide whether to add or to update;

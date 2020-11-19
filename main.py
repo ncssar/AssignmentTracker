@@ -127,29 +127,26 @@ class assignmentTrackerApp(App):
         self.teamsList=[]
         self.assignentsList=[]
         self.sm=ScreenManager()
-
-        # start with a clean database every time the app is started
-        #  (need to implement auto-recover)
-        if os.path.exists('tracker.db'):
-            os.remove('tracker.db')
+        self.assignmentDetailBeingShown="N/A"
 
         self.device='SITUATION UNIT'
         self.nextCallsign='103'
         self.assignmentNamePool=[chr(a)+chr(b) for a in range(65,91) for b in range(65,91)] # AA..AZ,BA..BZ,..
+
         # for each screen, example myScreen1 as instance of class myScreen:
         # 1. define myScreen in .kv
         # 2. class myScreen(Screen) - define any needed properties
         # 3. self.sm.add_widget(myScreen(name='myScreen1'))
         # 4. self.myScreen1=self.sm.get_screen('myScreen1')
-        self.sm.add_widget(TeamsScreen(name='teams'))
-        self.teams=self.sm.get_screen('teams')
+        self.sm.add_widget(TeamsScreen(name='teamsScreen'))
+        self.teamsScreen=self.sm.get_screen('teamsScreen')
 
-        self.teams.ids.deviceHeader.ids.deviceLabel.text=self.device
+        self.teamsScreen.ids.deviceHeader.ids.deviceLabel.text=self.device
 
-        self.sm.add_widget(AssignmentsScreen(name='assignments'))
-        self.assignments=self.sm.get_screen('assignments')
+        self.sm.add_widget(AssignmentsScreen(name='assignmentsScreen'))
+        self.assignmentsScreen=self.sm.get_screen('assignmentsScreen')
 
-        self.assignments.ids.deviceHeader.ids.deviceLabel.text=self.device
+        self.assignmentsScreen.ids.deviceHeader.ids.deviceLabel.text=self.device
 
         self.sm.add_widget(NewTeamScreen(name='newTeamScreen'))
         self.newTeamScreen=self.sm.get_screen('newTeamScreen')
@@ -157,16 +154,25 @@ class assignmentTrackerApp(App):
         self.sm.add_widget(NewAssignmentScreen(name='newAssignmentScreen'))
         self.newAssignmentScreen=self.sm.get_screen('newAssignmentScreen')
 
-        self.newTeam(['101','Working','Ground Type 1','AA','AK'])
-        self.newTeam(['102','Enroute to CP','K9 (HRD)','AB','AG'])
+        self.sm.add_widget(PairingScreen(name='pairingScreen'))
+        self.pairingScreen=self.sm.get_screen('pairingScreen')
 
-        self.newAssignment(['AA','INPROGRESS','Ground Type 1'])
-        self.newAssignment(['AB','INPROGRESS','K9 (HBD)'])
-        self.newAssignment(['AG','COMPLETED','K9 (HRD)'])
-        self.newAssignment(['AK','COMPLETED','Ground Type 1'])
-        self.newAssignment(['AL','PREPARED','Ground Type 2'])
-        self.newAssignment(['ZZ','PREPARED','Ground Type 2'])
-            
+        self.sm.add_widget(AssignmentDetailScreen(name='assignmentDetailScreen'))
+        self.assignmentDetailScreen=self.sm.get_screen('assignmentDetailScreen')
+
+        tdbInit()
+        # some hardcoded initial data for development
+        self.newTeam('101','Ground Type 1')
+        self.newTeam('102','K9 (HRD)')
+        self.newAssignment('AA','Ground Type 1')
+        self.newAssignment('AB','K9 (HBD)')
+        self.newAssignment('AG','K9 (HRD)')
+        self.newAssignment('AK','Ground Type 1')
+        self.newAssignment('AL','Ground Type 2')
+        self.newAssignment('ZZ','Ground Type 2')
+        self.pair('AA','101')
+        self.pair('AB','102')
+
         self.showTeams()
         
         self.container=BoxLayout(orientation='vertical')
@@ -182,14 +188,14 @@ class assignmentTrackerApp(App):
         
         return self.container
 
-    def newTeam(self,theList=[]):
-        if len(theList)<5: # simple team; ground-2, next callsign
-            theList=[self.nextCallsign,'UNASSIGNED','Ground Type 2','--','--']
+    def newTeam(self,name=None,resource=None):
+        if not name:
+            name=self.nextCallsign
             self.incrementNextCallsign()
-        r=tdbNewTeam(dict(zip([x[0] for x in TEAM_COLS],theList)))
-        Logger.info("return from newTeam:")
+        resource=resource or 'Ground Type 2'
+        r=tdbNewTeam(name,resource)
+        Logger.info('return from newTeam:')
         Logger.info(r)
-        self.showTeams()
 
     def incrementNextCallsign(self):
         if self.nextCallsign.isnumeric():
@@ -198,14 +204,13 @@ class assignmentTrackerApp(App):
     # def assign(self,assignmentName,teamName):
     #     tdbAssign(assignmentName,teamName)
 
-    def newAssignment(self,theList=[]):
-        Logger.info("newAssignment called")
-        if len(theList)<3: # simple assignment; ground-2, next callsign
-            theList=[self.assignmentNamePool.pop(0),'UNASSIGNED','Ground Type 2']
-        elif theList[0] in self.assignmentNamePool:
-            self.assignmentNamePool.remove(theList[0])
-        r=tdbNewAssignment(dict(zip([x[0] for x in ASSIGNMENT_COLS],theList)))
-        Logger.info("return from newAssignment:")
+    def newAssignment(self,name=None,intendedResource=None):
+        name=name or self.assignmentNamePool.pop(0)
+        if name in self.assignmentNamePool:
+            self.assignmentNamePool.remove(name)
+        intendedResource=intendedResource or 'Ground Type 2'
+        r=tdbNewAssignment(name,intendedResource)
+        Logger.info('return from newAssignment:')
         Logger.info(r)
 
     def startup(self,*args,allowRecoverIfNeeded=True):
@@ -230,63 +235,81 @@ class assignmentTrackerApp(App):
 #         PythonActivity.mActivity.getWindow().clearFlags(Params.FLAG_KEEP_SCREEN_ON)
 
     def buildTeamsList(self):
-        Logger.info("buildTeamsList called")
+        Logger.info('****************** buildTeamsList called')
         self.teamsList=[]
         tdbTeams=tdbGetTeams()
-        Logger.info(json.dumps(tdbTeams))
+        tdbPairings=tdbGetPairings()
         for entry in tdbTeams:
-            self.teamsList.append(list(entry.values())[1:])
-        Logger.info("teamsList at end of buildTeamsList:"+str(self.teamsList))
+            id=entry['TeamID']
+            pairings=[x for x in tdbPairings if x['TeamID']==id] # pairings that include this team
+            assignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in pairings]
+            # Logger.info('Assignments for '+str(entry['TeamName'])+':'+str(assignments))
+            self.teamsList.append([
+                entry['TeamName'],
+                entry['TeamStatus'],
+                entry['Resource'],
+                ','.join(assignments),
+                '--'])
+        Logger.info('teamsList at end of buildTeamsList:'+str(self.teamsList))
 
     def buildAssignmentsList(self):
-        Logger.info("buildAssignmentsList called")
+        Logger.info('******************** buildAssignmentsList called')
         self.assignmentsList=[]
-        self.completedAssignments=[]
-        tdbTeams=tdbGetTeams()
+        self.previousAssignments=[]
         tdbAssignments=tdbGetAssignments()
-        Logger.info(json.dumps(tdbAssignments))
+        tdbPairings=tdbGetPairings()
         for entry in tdbAssignments:
-            assignmentName=entry["AssignmentName"]
-            if entry["AssignmentStatus"]=='COMPLETED':
-                completedTeams=[x for x in tdbTeams if assignmentName in x['CompletedAssignments']]
-                for team in completedTeams:
-                    self.completedAssignments.append([assignmentName,team['TeamName'],'COMPLETED',team['Resource']])
+            id=entry['AssignmentID']
+            assignmentName=entry['AssignmentName']
+            assignmentStatus=entry['AssignmentStatus']
+            previous=[]
+            current=[]
+            pairings=[x for x in tdbPairings if x['AssignmentID']==id] # pairings that include this assignment
+            if pairings:
+                for pairing in pairings:
+                    if pairing["PreviousFlag"]==1:
+                        previous.append(tdbGetTeamNameByID(pairing["TeamID"]))
+                    else:
+                        current.append(tdbGetTeamNameByID(pairing["TeamID"]))
             else:
-                currentTeams=[x for x in tdbTeams if assignmentName in x['CurrentAssignments']]
-                Logger.info("currentTeams:")
-                Logger.info(currentTeams)
-                if currentTeams:
-                    for team in currentTeams:
-                        self.assignmentsList.append([assignmentName,team['TeamName'],team['TeamStatus'],team['Resource']])
-                else:
-                    self.assignmentsList.append([assignmentName,'---','UNASSIGNED',entry['IntendedResource']])
-        self.assignmentsList+=self.completedAssignments # until a separate list display is arranged
+                self.assignmentsList.append([assignmentName,'--',assignmentStatus,tdbGetAssignmentIntendedResourceByName(assignmentName)])
+            for teamName in current:
+                self.assignmentsList.append([assignmentName,teamName,tdbGetTeamStatusByName(teamName),tdbGetTeamResourceByName(teamName)])
+            for teamName in previous:
+                self.previousAssignments.append([assignmentName,teamName,'COMPLETED',tdbGetTeamResourceByName(teamName)])
+        self.assignmentsList+=self.previousAssignments # list completed assignments at the end, until a separate list display is arranged
 
     def showTeams(self,*args):
-        Logger.info("showTeams called")                    
-        self.teams.ids.viewSwitcher.ids.teamsViewButton.font_size='40sp'
-        self.teams.ids.viewSwitcher.ids.assignmentsViewButton.font_size='20sp'
+        Logger.info('showTeams called')                    
+        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.font_size='40sp'
+        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.font_size='20sp'
         self.buildTeamsList()
         # recycleview needs a single list of strings; it divides into rows every nth element
-        self.teams.teamsRVList=[]
+        self.teamsScreen.teamsRVList=[]
         for entry in self.teamsList:
             row=copy.deepcopy(entry)
-            self.teams.teamsRVList=self.teams.teamsRVList+row
+            self.teamsScreen.teamsRVList=self.teamsScreen.teamsRVList+row
         self.sm.transition=NoTransition()
-        self.sm.current='teams'
+        self.sm.current='teamsScreen'
 
     def showAssignments(self,*args):
         Logger.info("showAssignments called")
-        self.assignments.ids.viewSwitcher.ids.teamsViewButton.font_size='20sp'
-        self.assignments.ids.viewSwitcher.ids.assignmentsViewButton.font_size='40sp'
+        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.font_size='20sp'
+        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.font_size='40sp'
         self.buildAssignmentsList()
         # recycleview needs a single list of strings; it divides into rows every nth element
-        self.assignments.assignmentsRVList=[]
+        self.assignmentsScreen.assignmentsRVList=[]
         for entry in self.assignmentsList:
             row=copy.deepcopy(entry)
-            self.assignments.assignmentsRVList=self.assignments.assignmentsRVList+row
+            self.assignmentsScreen.assignmentsRVList=self.assignmentsScreen.assignmentsRVList+row
         self.sm.transition=NoTransition()
-        self.sm.current='assignments'
+        self.sm.current='assignmentsScreen'
+
+    def showAssignmentDetail(self,assignmentName):
+        Logger.info("showAssignmentDetail called:"+str(assignmentName))
+        self.assignmentDetailScreen.ids.assignmentNameLabel.text=assignmentName
+        self.assignmentDetailBeingShown=assignmentName
+        self.sm.current='assignmentDetailScreen'
 
     def showNewTeam(self,*args):
         Logger.info('showNewTeam called')
@@ -295,6 +318,28 @@ class assignmentTrackerApp(App):
     def showNewAssignment(self,*args):
         Logger.info('showNewAssignment called')
         self.sm.current='newAssignmentScreen'
+
+    def showPairing(self,assignmentName):
+        Logger.info("showPairing called: "+str(assignmentName))
+        self.pairingScreen.ids.changePairingLabel.text=assignmentName
+        self.pairingScreen.ids.pairingBox.clear_widgets() # potential memory hole if widgets aren't gc'ed?
+        unassignedTeamNameList=[x[0] for x in self.teamsList if x[1]=='UNASSIGNED']
+        # self.pairingScreen.add_widget(BoxLayout(id='pairingBox',orientation='vertical'))
+        if unassignedTeamNameList:
+            for unassignedTeam in unassignedTeamNameList:
+                btn=Button(text=unassignedTeam,size_hint_y=None,height=44)
+                btn.bind(on_release=lambda btn: theApp.pair(assignmentName,btn.text))
+                self.pairingScreen.ids.pairingBox.add_widget(btn)
+        else:
+            label=Label(text='No unassigned teams',size_hint_y=None,height=88)
+            self.pairingScreen.ids.pairingBox.add_widget(label)
+        self.sm.current='pairingScreen'
+
+    def pair(self,assignmentName,teamName):
+        Logger.info("pairing assignment "+str(assignmentName)+" with team "+str(teamName))
+        tdbPair(tdbGetAssignmentIDByName(assignmentName),tdbGetTeamIDByName(teamName))
+        tdbSetTeamStatusByName(teamName,'ASSIGNED')
+        tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
 
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
 
@@ -319,25 +364,26 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
             rv, index, data)
 
     def on_touch_down(self, touch):
-        ''' Add selection on touch down '''
         if super(SelectableLabel, self).on_touch_down(touch):
             return True
         if self.collide_point(*touch.pos) and self.selectable:
-            if theApp.sm.current=='theList':
-                colCount=theApp.theList.ids.theGridLayout.cols
-                Logger.info("List item tapped: index="+str(self.index)+":"+str(theApp.theList.ids.theGrid.data[self.index]))
+            if theApp.sm.current=='assignmentsScreen':
+                colCount=theApp.assignmentsScreen.ids.assignmentsLayout.cols
+                Logger.info("Assignments list item tapped: index="+str(self.index)+":"+str(theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]))
                 rowNum=int(self.index/colCount)
-                bg=theApp.theList.ids.theGrid.data[self.index]['bg']
+                assignmentName=str(theApp.assignmentsScreen.ids.assignmentsRV.data[rowNum*colCount]["text"])
+                bg=theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]['bg']
                 if bg[1]==0:
                     newBg=(0,0.8,0.1,0.7)
                 else:
                     newBg=(0,0,0,0)
                 for i in list(range(rowNum*colCount,(rowNum+1)*colCount)):
-                    theApp.theList.ids.theGrid.data[i]['bg']=newBg
-                theApp.theList.ids.theGrid.refresh_from_data()
+                    theApp.assignmentsScreen.ids.assignmentsRV.data[i]['bg']=newBg
+                theApp.assignmentsScreen.ids.assignmentsRV.refresh_from_data()
+                theApp.showAssignmentDetail(assignmentName)
                 return True
-            else:
-                return self.parent.select_with_touch(self.index, touch)
+        #     else:
+        #         return self.parent.select_with_touch(self.index, touch)
 
     def apply_selection(self, rv, index, is_selected):
         ''' Respond to the selection of items in the view. '''
@@ -362,11 +408,20 @@ class AssignmentsScreen(Screen):
     assignmentsRVList=ListProperty([])
 
 
+class AssignmentDetailScreen(Screen):
+    assignmentDetailCurrentRVList=ListProperty([])
+    assignmentDetailPreviousRVList=ListProperty([])
+
+
 class NewTeamScreen(Screen):
     pass
 
 
 class NewAssignmentScreen(Screen):
+    pass
+
+
+class PairingScreen(Screen):
     pass
 
 

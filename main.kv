@@ -270,7 +270,7 @@
             size_hint_y: 0.9
             RecycleView:
                 viewclass: 'SelectableLabel'
-                id: teamsRV
+                id: assignmentsRV
                 data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentsRVList]
                 SelectableRecycleGridLayout:
                     id: assignmentsLayout
@@ -282,6 +282,54 @@
                     orientation: 'vertical'
                     multiselect: False
 
+<AssignmentDetailScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            orientation: 'horizontal'
+            Label:
+                text: 'Assignment'
+            Label:
+                id: assignmentNameLabel
+                text: 'N/A'
+        BoxLayout:
+            RecycleView:
+                viewclass: 'SelectableLabel'
+                id: assignmentDetailCurrentRV
+                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentDetailCurrentRVList]
+                SelectableRecycleGridLayout:
+                    id: assignmentDetailCurrentLayout
+                    cols: 3
+                    size_hint_y: None
+                    default_size: None, dp(32)
+                    default_size_hint: 1, None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    multiselect: False
+        BoxLayout:
+            id: assignmentDetailPreviosBox
+            RecycleView:
+                viewclass: 'SelectableLabel'
+                id: assignmentDetailPreviousRV
+                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentDetailPreviousRVList]
+                SelectableRecycleGridLayout:
+                    id: assignmentDetailPreviousLayout
+                    cols: 3
+                    size_hint_y: None
+                    default_size: None, dp(32)
+                    default_size_hint: 1, None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    multiselect: False
+        Button:
+            text: 'Assign a team to this assignment'
+            on_press: app.showPairing(app.assignmentDetailBeingShown)
+        Label:
+            text: 'Activity Log'
+        Button:
+            text: 'Close'
+            on_press: app.showAssignments()
+
 <NewTeamScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -292,6 +340,7 @@
             text: 'Use next callsign'
             on_press: app.newTeam()
         Button:
+            size_hint_y: 0.1
             text: 'Close'
             on_press: app.showTeams()
 
@@ -305,5 +354,20 @@
             text: 'Use next name'
             on_press: app.newAssignment()
         Button:
+            size_hint_y: 0.1
+            text: 'Close'
+            on_press: app.showAssignments()
+
+<PairingScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: changePairingLabel
+            text: 'N/A'
+        BoxLayout:
+            orientation: 'vertical'
+            id: pairingBox
+        Button:
+            size_hint_y: 0.1
             text: 'Close'
             on_press: app.showAssignments()
