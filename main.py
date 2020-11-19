@@ -130,7 +130,7 @@ class assignmentTrackerApp(App):
         self.assignmentDetailBeingShown="N/A"
 
         self.device='SITUATION UNIT'
-        self.nextCallsign='103'
+        self.callsignPool=list(map(str,range(101,200)))
         self.assignmentNamePool=[chr(a)+chr(b) for a in range(65,91) for b in range(65,91)] # AA..AZ,BA..BZ,..
 
         # for each screen, example myScreen1 as instance of class myScreen:
@@ -194,29 +194,32 @@ class assignmentTrackerApp(App):
         return self.container
 
     def newTeam(self,name=None,resource=None):
-        if not name:
-            name=self.nextCallsign
-            self.incrementNextCallsign()
-        resource=resource or 'Ground Type 2'
+        name=name or self.callsignPool.pop(0)
+        if name in self.callsignPool:
+            self.callsignPool.remove(name)
+        resource=resource or self.newTeamScreen.ids.resourceSpinner.text
         r=tdbNewTeam(name,resource)
         Logger.info('return from newTeam:')
         Logger.info(r)
-
-    def incrementNextCallsign(self):
-        if self.nextCallsign.isnumeric():
-            self.nextCallsign=str(int(self.nextCallsign)+1)
-
-    # def assign(self,assignmentName,teamName):
-    #     tdbAssign(assignmentName,teamName)
+        self.updateNewTeamNameSpinner()
 
     def newAssignment(self,name=None,intendedResource=None):
         name=name or self.assignmentNamePool.pop(0)
         if name in self.assignmentNamePool:
             self.assignmentNamePool.remove(name)
-        intendedResource=intendedResource or 'Ground Type 2'
+        intendedResource=intendedResource or self.newAssignmentScreen.ids.resourceSpinner.text
         r=tdbNewAssignment(name,intendedResource)
         Logger.info('return from newAssignment:')
         Logger.info(r)
+        self.updateNewAssignmentNameSpinner()
+
+    def updateNewTeamNameSpinner(self):
+        self.newTeamScreen.ids.nameSpinner.values=self.callsignPool[0:8]
+        self.newTeamScreen.ids.nameSpinner.text=self.callsignPool[0]
+    
+    def updateNewAssignmentNameSpinner(self):
+        self.newAssignmentScreen.ids.nameSpinner.values=self.assignmentNamePool[0:8]
+        self.newAssignmentScreen.ids.nameSpinner.text=self.assignmentNamePool[0]
 
     def startup(self,*args,allowRecoverIfNeeded=True):
         # perform startup tasks here that should take place after the GUI is alive:
@@ -337,10 +340,12 @@ class assignmentTrackerApp(App):
 
     def showNewTeam(self,*args):
         Logger.info('showNewTeam called')
+        self.updateNewTeamNameSpinner()
         self.sm.current='newTeamScreen'
 
     def showNewAssignment(self,*args):
         Logger.info('showNewAssignment called')
+        self.updateNewAssignmentNameSpinner()
         self.sm.current='newAssignmentScreen'
 
     def showPairing(self,assignmentName):

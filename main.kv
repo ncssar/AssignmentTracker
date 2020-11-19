@@ -344,8 +344,26 @@
         Label:
             text: 'New Team'
             font_size: '30sp'
+        BoxLayout:
+            orientation: 'horizontal'
+            Label:
+                text: 'Team Name:'
+            Spinner:
+                id: nameSpinner
+                text: '101'
+                values: ['101','102','103']
+        BoxLayout:
+            orientation: 'horizontal'
+            Label:
+                text: 'Team Resource Type:'
+            Spinner:
+                id: resourceSpinner
+                text: 'Ground Type 2'
+                values: ['Ground Type 2','Ground Type 1','OHV','K9']
+                # on_text: print("The spinner {} has text {}".format(self, self.text))
         Button:
-            text: 'Use next callsign'
+            size_hint_y: 0.2
+            text: 'Create Team'
             on_press: app.newTeam()
         Button:
             size_hint_y: 0.1
@@ -358,8 +376,26 @@
         Label:
             text: 'New Assignment'
             font_size: '30sp'
+        BoxLayout:
+            orientation: 'horizontal'
+            Label:
+                text: 'Team Name:'
+            Spinner:
+                id: nameSpinner
+                text: 'AA'
+                values: ['AA','AB','AC']
+        BoxLayout:
+            orientation: 'horizontal'
+            Label:
+                text: 'Intended Resource Type:'
+            Spinner:
+                id: resourceSpinner
+                text: 'Ground Type 2'
+                values: ['Ground Type 2','Ground Type 1','OHV','K9']
+                # on_text: print("The spinner {} has text {}".format(self, self.text))
         Button:
-            text: 'Use next name'
+            size_hint_y: 0.2
+            text: 'Create Assignment'
             on_press: app.newAssignment()
         Button:
             size_hint_y: 0.1
