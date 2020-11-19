@@ -160,6 +160,11 @@ class assignmentTrackerApp(App):
         self.sm.add_widget(AssignmentDetailScreen(name='assignmentDetailScreen'))
         self.assignmentDetailScreen=self.sm.get_screen('assignmentDetailScreen')
 
+        self.assignedTeamsCount=0
+        self.unassignedTeamsCount=0
+        self.assignedAssignmentsCount=0
+        self.unassignedAssignmentsCount=0
+
         tdbInit()
         # some hardcoded initial data for development
         self.newTeam('101','Ground Type 1')
@@ -248,7 +253,7 @@ class assignmentTrackerApp(App):
                 entry['TeamName'],
                 entry['TeamStatus'],
                 entry['Resource'],
-                ','.join(assignments),
+                ','.join(assignments) or '--',
                 '--'])
         Logger.info('teamsList at end of buildTeamsList:'+str(self.teamsList))
 
@@ -280,10 +285,10 @@ class assignmentTrackerApp(App):
         self.assignmentsList+=self.previousAssignments # list completed assignments at the end, until a separate list display is arranged
 
     def showTeams(self,*args):
-        Logger.info('showTeams called')                    
-        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.font_size='40sp'
-        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.font_size='20sp'
+        Logger.info('showTeams called')
         self.buildTeamsList()
+        self.buildAssignmentsList()
+        self.updateCounts()                  
         # recycleview needs a single list of strings; it divides into rows every nth element
         self.teamsScreen.teamsRVList=[]
         for entry in self.teamsList:
@@ -294,9 +299,9 @@ class assignmentTrackerApp(App):
 
     def showAssignments(self,*args):
         Logger.info("showAssignments called")
-        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.font_size='20sp'
-        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.font_size='40sp'
+        self.buildTeamsList()
         self.buildAssignmentsList()
+        self.updateCounts()              
         # recycleview needs a single list of strings; it divides into rows every nth element
         self.assignmentsScreen.assignmentsRVList=[]
         for entry in self.assignmentsList:
@@ -305,6 +310,25 @@ class assignmentTrackerApp(App):
         self.sm.transition=NoTransition()
         self.sm.current='assignmentsScreen'
 
+    def updateCounts(self):
+        Logger.info("updateCounts called")
+        self.unassignedTeamsCount=len([x for x in self.teamsList if x[1]=='UNASSIGNED'])
+        self.assignedTeamsCount=len(self.teamsList)-self.unassignedTeamsCount
+        self.unassignedAssignmentsCount=len([x for x in self.assignmentsList if x[2]=='UNASSIGNED'])
+        self.assignedAssignmentsCount=len(self.assignmentsList)-self.unassignedAssignmentsCount
+        teamsCountText=str(self.assignedTeamsCount)+' Assigned,     '+str(self.unassignedTeamsCount)+' Unassigned'
+        assignmentsCountText=str(self.assignedAssignmentsCount)+' Assigned,     '+str(self.unassignedAssignmentsCount)+' Unassigned'
+
+        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=35]Teams\n[size=12]'+teamsCountText
+        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.line_height=0.7
+        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=20]Assignments\n[size=12]'+assignmentsCountText
+        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.95
+        
+        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=20]Teams\n[size=12]'+teamsCountText
+        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.line_height=0.95
+        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+assignmentsCountText
+        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.7
+    
     def showAssignmentDetail(self,assignmentName):
         Logger.info("showAssignmentDetail called:"+str(assignmentName))
         self.assignmentDetailScreen.ids.assignmentNameLabel.text=assignmentName
