@@ -59,6 +59,8 @@ ASSIGNMENT_HISTORY_COLS=[
     ["Event","TEXT"],
     ["RecordedBy","TEXT"]]
 
+TEAM_STATUSES=["UNASSIGNED","ASSIGNED","WORKING","ENROUTE TO IC","DEBRIEFING"]
+
 # needed to make query return values dictionaries instead of lists of tuples
 def dict_factory(cursor, row):
     d = {}
@@ -216,6 +218,10 @@ def tdbGetAssignmentNameByID(assignmentID):
 def tdbGetAssignmentIDByName(assignmentName):
     query="SELECT AssignmentID FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"
     return q(query)[0].get("AssignmentID",None)
+
+def tdbGetAssignmentStatusByName(assignmentName):
+    query="SELECT AssignmentStatus FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"
+    return q(query)[0].get("AssignmentStatus",None)
 
 def tdbGetAssignmentIntendedResourceByName(assignmentName):
     query="SELECT IntendedResource FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"

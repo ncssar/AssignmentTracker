@@ -127,7 +127,7 @@ class assignmentTrackerApp(App):
         self.teamsList=[]
         self.assignentsList=[]
         self.sm=ScreenManager()
-        self.assignmentDetailBeingShown="N/A"
+        self.pairingDetailBeingShown=[]
 
         self.device='SITUATION UNIT'
         self.callsignPool=list(map(str,range(101,200)))
@@ -314,7 +314,7 @@ class assignmentTrackerApp(App):
         self.sm.current='assignmentsScreen'
 
     def updateCounts(self):
-        Logger.info("updateCounts called")
+        Logger.info('updateCounts called')
         self.unassignedTeamsCount=len([x for x in self.teamsList if x[1]=='UNASSIGNED'])
         self.assignedTeamsCount=len(self.teamsList)-self.unassignedTeamsCount
         self.unassignedAssignmentsCount=len([x for x in self.assignmentsList if x[2]=='UNASSIGNED'])
@@ -332,12 +332,34 @@ class assignmentTrackerApp(App):
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+assignmentsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.7
     
-    def showAssignmentDetail(self,assignmentName):
-        Logger.info("showAssignmentDetail called:"+str(assignmentName))
+    def showAssignmentDetail(self,assignmentName,teamName=None):
+        Logger.info('showAssignmentDetail called:'+str(assignmentName)+' : '+str(teamName))
+        if teamName:
+            status=tdbGetTeamStatusByName(teamName)
+        else:
+            teamName='--'
+            status='UNASSIGNED'
         self.assignmentDetailScreen.ids.assignmentNameLabel.text=assignmentName
-        self.assignmentDetailBeingShown=assignmentName
+        self.assignmentDetailScreen.ids.teamNameLabel.text=teamName
+        self.assignmentDetailScreen.ids.statusLabel.text=status
+        self.pairingDetailBeingShown=[assignmentName,teamName]
+        self.assignmentDetailStatusUpdate()
         self.sm.current='assignmentDetailScreen'
 
+    def assignmentDetailStatusUpdate(self):
+        teamName=self.pairingDetailBeingShown[1]
+        if teamName=='--':
+            return
+        status=tdbGetTeamStatusByName(teamName)
+        statusList=copy.copy(TEAM_STATUSES)
+        statusList.remove(status)
+        self.assignmentDetailScreen.ids.statusSpinner.values=statusList
+        currentIndex=TEAM_STATUSES.index(status)-1
+        newIndex=currentIndex+1
+        if newIndex==len(TEAM_STATUSES)-1:
+            newIndex=0
+        self.assignmentDetailScreen.ids.statusSpinner.text=statusList[newIndex] # go to the next logical status by default
+        
     def showNewTeam(self,*args):
         Logger.info('showNewTeam called')
         self.updateNewTeamNameSpinner()
@@ -349,26 +371,64 @@ class assignmentTrackerApp(App):
         self.sm.current='newAssignmentScreen'
 
     def showPairing(self,assignmentName):
-        Logger.info("showPairing called: "+str(assignmentName))
-        self.pairingScreen.ids.changePairingLabel.text=assignmentName
-        self.pairingScreen.ids.pairingBox.clear_widgets() # potential memory hole if widgets aren't gc'ed?
-        unassignedTeamNameList=[x[0] for x in self.teamsList if x[1]=='UNASSIGNED']
-        # self.pairingScreen.add_widget(BoxLayout(id='pairingBox',orientation='vertical'))
-        if unassignedTeamNameList:
-            for unassignedTeam in unassignedTeamNameList:
-                btn=Button(text=unassignedTeam,size_hint_y=None,height=44)
-                btn.bind(on_release=lambda btn: theApp.pair(assignmentName,btn.text))
-                self.pairingScreen.ids.pairingBox.add_widget(btn)
+        Logger.info('showPairing called: '+str(assignmentName))
+        intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
+        label=assignmentName+' : '+intendedResource
+        status=tdbGetAssignmentStatusByName(assignmentName)
+        if status=='UNASSIGNED':
+            label=label+'\n'+status
         else:
-            label=Label(text='No unassigned teams',size_hint_y=None,height=88)
-            self.pairingScreen.ids.pairingBox.add_widget(label)
+            label=label+'\nASSIGNED TO team(s)'
+        self.pairingScreen.ids.changePairingLabel.text=label
+        part1=[] # unassigned teams, same resource type as intended resource
+        part2=[] # unassigned teams, other resource types
+        part3=[] # assigned teams, same resource type as intended resource
+        part4=[] # assigned teams, other resource types
+        for team in self.teamsList:
+            if team[1]=='UNASSIGNED':
+                entryText=team[0]+' : '+team[2]+'   '+team[1]
+                if team[2]==intendedResource:
+                    part1.append(entryText)
+                else:
+                    part2.append(entryText)
+            else:
+                entryText=team[0]+' : '+team[2]+'  ASSIGNED to '+team[3]
+                if team[2]==intendedResource:
+                    part3.append(entryText)
+                else:
+                    part4.append(entryText)
+        theList=part1+part2+part3+part4
+        self.pairingScreen.ids.teamSpinner.values=theList
+        if theList:
+            self.pairingScreen.ids.teamSpinner.text=theList[0]
+        else:
+            # could show a warning here and disallow pairing before the screen raises
+            self.pairingScreen.ids.teamSpinner.text='No teams defined'
         self.sm.current='pairingScreen'
 
-    def pair(self,assignmentName,teamName):
+    def pair(self,assignmentName=None,teamName=None):
+        if not assignmentName:
+            assignmentName=self.pairingDetailBeingShown[0]
+        if not teamName:
+            teamName=self.pairingScreen.ids.teamSpinner.text.split()[0]
         Logger.info("pairing assignment "+str(assignmentName)+" with team "+str(teamName))
         tdbPair(tdbGetAssignmentIDByName(assignmentName),tdbGetTeamIDByName(teamName))
         tdbSetTeamStatusByName(teamName,'ASSIGNED')
         tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
+
+    def changeTeamStatus(self,teamName=None,status=None):
+        if not teamName:
+            [assignmentName,teamName]=self.pairingDetailBeingShown
+        if not status:
+            status=self.assignmentDetailScreen.ids.statusSpinner.text
+        # if status==TEAM_STATUSES[0]: # changing to UNASSIGNED will move this pairing to 'previous'
+        #     self.status
+        Logger.info('changing status for team '+str(teamName)+' to '+str(status))
+        tdbSetTeamStatusByName(teamName,status)
+        self.assignmentDetailScreen.ids.statusLabel.text=status
+        self.assignmentDetailStatusUpdate()
+        
+            
 
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
 
@@ -400,16 +460,21 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
                 colCount=theApp.assignmentsScreen.ids.assignmentsLayout.cols
                 Logger.info("Assignments list item tapped: index="+str(self.index)+":"+str(theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]))
                 rowNum=int(self.index/colCount)
-                assignmentName=str(theApp.assignmentsScreen.ids.assignmentsRV.data[rowNum*colCount]["text"])
-                bg=theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]['bg']
-                if bg[1]==0:
-                    newBg=(0,0.8,0.1,0.7)
-                else:
-                    newBg=(0,0,0,0)
-                for i in list(range(rowNum*colCount,(rowNum+1)*colCount)):
-                    theApp.assignmentsScreen.ids.assignmentsRV.data[i]['bg']=newBg
-                theApp.assignmentsScreen.ids.assignmentsRV.refresh_from_data()
-                theApp.showAssignmentDetail(assignmentName)
+                row=theApp.assignmentsScreen.ids.assignmentsRV.data[rowNum*colCount:(rowNum+1)*colCount]
+                Logger.info("   selected row:"+str(row))
+                assignmentName=str(row[0]["text"])
+                teamName=str(row[1]["text"])
+                if teamName=='--':
+                    teamName=None
+                # bg=theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]['bg']
+                # if bg[1]==0:
+                #     newBg=(0,0.8,0.1,0.7)
+                # else:
+                #     newBg=(0,0,0,0)
+                # for i in list(range(rowNum*colCount,(rowNum+1)*colCount)):
+                #     theApp.assignmentsScreen.ids.assignmentsRV.data[i]['bg']=newBg
+                # theApp.assignmentsScreen.ids.assignmentsRV.refresh_from_data()
+                theApp.showAssignmentDetail(assignmentName,teamName)
                 return True
         #     else:
         #         return self.parent.select_with_touch(self.index, touch)

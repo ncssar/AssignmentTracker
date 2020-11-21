@@ -295,43 +295,58 @@
         orientation: 'vertical'
         BoxLayout:
             orientation: 'horizontal'
-            Label:
-                text: 'Assignment'
-            Label:
-                id: assignmentNameLabel
-                text: 'N/A'
+            BoxLayout:
+                orientation: 'vertical'
+                Label:
+                    id: assignmentNameLabel
+                    text: '--'
+                    font_size: 60
+                Label:
+                    text: 'Assignment'
+                    font_size: 20
+            BoxLayout:
+                orientation: 'vertical'
+                Label:
+                    id: teamNameLabel
+                    text: '--'
+                    font_size: 60
+                Label:
+                    text: 'Team'
+                    font_size: 20
+        Label:
+            id: statusLabel
+            text: 'STATUS'
+            font_size: 30
+        # BoxLayout:
+        #     id: assignmentDetailPreviousBox
+        #     RecycleView:
+        #         viewclass: 'SelectableLabel'
+        #         id: assignmentDetailPreviousRV
+        #         data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentDetailPreviousRVList]
+        #         SelectableRecycleGridLayout:
+        #             id: assignmentDetailPreviousLayout
+        #             cols: 3
+        #             size_hint_y: None
+        #             default_size: None, dp(32)
+        #             default_size_hint: 1, None
+        #             height: self.minimum_height
+        #             orientation: 'vertical'
+        #             multiselect: False
         BoxLayout:
-            RecycleView:
-                viewclass: 'SelectableLabel'
-                id: assignmentDetailCurrentRV
-                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentDetailCurrentRVList]
-                SelectableRecycleGridLayout:
-                    id: assignmentDetailCurrentLayout
-                    cols: 3
-                    size_hint_y: None
-                    default_size: None, dp(32)
-                    default_size_hint: 1, None
-                    height: self.minimum_height
-                    orientation: 'vertical'
-                    multiselect: False
-        BoxLayout:
-            id: assignmentDetailPreviosBox
-            RecycleView:
-                viewclass: 'SelectableLabel'
-                id: assignmentDetailPreviousRV
-                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentDetailPreviousRVList]
-                SelectableRecycleGridLayout:
-                    id: assignmentDetailPreviousLayout
-                    cols: 3
-                    size_hint_y: None
-                    default_size: None, dp(32)
-                    default_size_hint: 1, None
-                    height: self.minimum_height
-                    orientation: 'vertical'
-                    multiselect: False
+            orientation: 'horizontal'
+            Label:
+                text: 'Change Status to'
+            Spinner:
+                id: statusSpinner
+                text: 'A'
+                values: ['A','B','C']
+            Button:
+                size_hint_x: 0.2
+                text: 'Apply'
+                on_press: app.changeTeamStatus()
         Button:
             text: 'Assign a team to this assignment'
-            on_press: app.showPairing(app.assignmentDetailBeingShown)
+            on_press: app.showPairing(app.pairingDetailBeingShown[0])
         Label:
             text: 'Activity Log'
         Button:
@@ -408,9 +423,17 @@
         Label:
             id: changePairingLabel
             text: 'N/A'
-        BoxLayout:
-            orientation: 'vertical'
-            id: pairingBox
+        Spinner:
+            size_hint_y: 0.1
+            markup: True
+            halign: 'left'
+            id: teamSpinner
+            text: '101'
+            values: ['101','102']
+        Button:
+            text: 'Apply'
+            size_hint_y: 0.2
+            on_press: app.pair()
         Button:
             size_hint_y: 0.1
             text: 'Close'
