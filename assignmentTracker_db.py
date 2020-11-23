@@ -25,7 +25,7 @@ import time
 import os
 
 # use one table for teams, one table for assigments, and reduce duplication of data;
-#  store the pairing data in the teams table, not in the assignments table
+#  store the pairing data in a separete table
 
 TEAM_COLS=[
     # TeamID is hardcoded as the primary key
@@ -34,11 +34,11 @@ TEAM_COLS=[
     ["Resource","TEXT DEFAULT 'Ground Type 2'"],
     ["CompletedAssignments","TEXT DEFAULT '--'"]] # comma-delimited string
 
-ASSIGNMENT_COLS=[ # don't try to store any pairing data in this table (except in history)
+ASSIGNMENT_COLS=[
     # AssignmentID is hardcoded as the primary key
     ["AssignmentName","TEXT"],
-    ["AssignmentStatus","TEXT DEFAULT 'UNASSIGNED'"],
-    ["IntendedResource","TEXT DEFAULT 'Ground Type 2'"]] # basically the same as sartopo assignment status
+    ["AssignmentStatus","TEXT DEFAULT 'UNASSIGNED'"], # either UNASSIGNED or ASSIGNED
+    ["IntendedResource","TEXT DEFAULT 'Ground Type 2'"]]
 
 PAIRING_COLS=[
     ["TeamID","INTEGER"],
@@ -46,18 +46,17 @@ PAIRING_COLS=[
     ["PairingStatus","TEXT"],
     ["PreviousFlag","INTEGER DEFAULT 0"]] # 0 = current, 1 = previous
 
-# one history table for each team, and one history table for each assignment;
-#   hostory table name includes teamID or assignmentID
+# History table: all activities are recorded in one table; each entry
+#   has columns for AsignmentID, TeamID, Entry, RecordedBy, Epoch;
+#   viewing the history can then be filtered by assignment, by team, 
+#   or by pairing (assignment/team combination)
 
-TEAM_HISTORY_COLS=[
-    ["Epoch","INTEGER"],
-    ["Event","TEXT"],
-    ["RecordedBy","TEXT"]]
-
-ASSIGNMENT_HISTORY_COLS=[
-    ["Epoch","INTEGER"],
-    ["Event","TEXT"],
-    ["RecordedBy","TEXT"]]
+HISTORY_COLS=[
+    ["AssignmentID","INTEGER"],
+    ["TeamID","INTEGER"],
+    ["Entry","TEXT"],
+    ["RecordedBy","TEXT"],
+    ["Epoch","INTEGER"]]
 
 TEAM_STATUSES=["UNASSIGNED","ASSIGNED","WORKING","ENROUTE TO IC","DEBRIEFING"]
 
@@ -104,6 +103,12 @@ def createPairingsTableIfNeeded():
     query='CREATE TABLE IF NOT EXISTS "Pairings" ('+colString+');'
     return q(query)
 
+def createHistoryTableIfNeeded():
+    colString="'HistoryID' INTEGER PRIMARY KEY AUTOINCREMENT,"
+    colString+=', '.join([str(x[0])+" "+str(x[1]) for x in HISTORY_COLS])
+    query='CREATE TABLE IF NOT EXISTS "History" ('+colString+');'
+    return q(query)
+
 def tdbInit():
     # start with a clean database every time the app is started
     #  (need to implement auto-recover)
@@ -112,6 +117,7 @@ def tdbInit():
     createTeamsTableIfNeeded()
     createAssignmentsTableIfNeeded()
     createPairingsTableIfNeeded()
+    createHistoryTableIfNeeded()
 
 # intercept any None values and change them to NULL
 # def noneToQuestion(x):
@@ -176,6 +182,7 @@ def tdbNewTeam(name,resource):
     #         'RecordedBy':'system'})
     # validate
     r=q('SELECT * FROM Teams ORDER BY TeamID DESC LIMIT 1;')
+    tdbAddHistoryEntry("Team "+name+" Created",teamID=r[0]["TeamID"],recordedBy='SYSTEM')
     validate=r[0]
     return {'validate':validate}
 
@@ -183,6 +190,7 @@ def tdbNewAssignment(name,intendedResource):
     # createAssignmentsTableIfNeeded()
     qInsert('Assignments',{'AssignmentName':name,'IntendedResource':intendedResource})
     r=q('SELECT * FROM Assignments ORDER BY AssignmentID DESC LIMIT 1;')
+    tdbAddHistoryEntry("Assignment "+name+" Created",assignmentID=r[0]["AssignmentID"],recordedBy='SYSTEM')
     validate=r[0]
     return {'validate':validate}
 
@@ -250,8 +258,8 @@ def tdbGetPairings():
     return q("SELECT * FROM 'Pairings';")
 
 def tdbSetTeamStatusByName(teamName,status):
+    tdbAddHistoryEntry('Status changed to '+status,teamID=tdbGetTeamIDByName(teamName),recordedBy='SYSTEM')
     query="UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamName = '"+str(teamName)+"';"
-    print(query)
     return q(query)
 
 def tdbSetAssignmentStatusByName(assignmentName,status):
@@ -263,10 +271,41 @@ def tdbPair(assignmentID,teamID):
     # query="UPDATE 'Pairings' SET TeamID = "+str(teamID)+" WHERE AssignmentID = "+str(assignmentID)+";"
     # query="INSERT INTO 'Pairings' (AssignmentID,TeamID) VALUES("+str(assignmentID)+","+str(teamID)+");"
     # return q(query)
+    assignmentName=tdbGetAssignmentNameByID(assignmentID)
+    teamName=tdbGetTeamNameByID(teamID)
+    tdbAddHistoryEntry("Pairing Created: Assignment "+assignmentName+" <=> Team "+teamName,assignmentID=assignmentID,teamID=teamID,recordedBy='SYSTEM')
     return qInsert('Pairings',{'AssignmentID':assignmentID,'TeamID':teamID})
 
 def tdbUpdateTeamLastEditEpoch(teamID):
     query="UPDATE 'Teams' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE TeamID="+str(teamID)+";"
+    return q(query)
+
+def tdbAddHistoryEntry(entry,assignmentID=-1,teamID=-1,recordedBy='N/A'):
+    qInsert('History',{
+        "AssignmentID":assignmentID,
+        "TeamID":teamID,
+        "Entry":entry,
+        "RecordedBy":recordedBy,
+        "Epoch":round(time.time())})
+
+def tdbGetHistory(assignmentID=None,teamID=None,useAnd=None):
+    if not assignmentID and not teamID:
+        return([])
+    op='OR' # by default, return history entries that involve either the team or the assignment
+    if useAnd:
+        op='AND' # optionally return history entries that only affect the status of both team and assignment
+    if assignmentID:
+        conditionA='AssignmentID='+str(assignmentID)
+    if teamID:
+        conditionT='TeamID='+str(teamID)
+    if assignmentID and teamID:
+        condition=conditionA+' '+op+' '+conditionT
+    elif assignmentID:
+        condition=conditionA
+    else:
+        condition=conditionT
+    query="SELECT * FROM 'History' WHERE {condition};".format(
+            condition=condition)
     return q(query)
 
 # it's cleaner to let the host decide whether to add or to update;

@@ -290,7 +290,7 @@
                     orientation: 'vertical'
                     multiselect: False
 
-<AssignmentDetailScreen>:
+<PairingDetailScreen>:
     BoxLayout:
         orientation: 'vertical'
         BoxLayout:
@@ -346,9 +346,23 @@
                 on_press: app.changeTeamStatus()
         Button:
             text: 'Assign a team to this assignment'
-            on_press: app.showPairing(app.pairingDetailBeingShown[0])
+            on_press: app.showNewPairing(app.pairingDetailBeingShown[0])
         Label:
             text: 'Activity Log'
+        RecycleView:
+            viewclass: 'Label'
+            id: historyRV
+            data: []
+            halign: 'left'
+            RecycleGridLayout:
+                cols:3
+                cols_minimum: {0:300,1:100,2:75}
+                default_size: None, dp(20)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                orientation: 'vertical'
+                halign: 'left'
         Button:
             text: 'Close'
             on_press: app.showAssignments()
@@ -417,7 +431,7 @@
             text: 'Close'
             on_press: app.showAssignments()
 
-<PairingScreen>:
+<NewPairingScreen>:
     BoxLayout:
         orientation: 'vertical'
         Label:

@@ -128,6 +128,7 @@ class assignmentTrackerApp(App):
         self.assignentsList=[]
         self.sm=ScreenManager()
         self.pairingDetailBeingShown=[]
+        self.pairingHistoryRVList=[1,2,3,4,5]
 
         self.device='SITUATION UNIT'
         self.callsignPool=list(map(str,range(101,200)))
@@ -154,11 +155,11 @@ class assignmentTrackerApp(App):
         self.sm.add_widget(NewAssignmentScreen(name='newAssignmentScreen'))
         self.newAssignmentScreen=self.sm.get_screen('newAssignmentScreen')
 
-        self.sm.add_widget(PairingScreen(name='pairingScreen'))
-        self.pairingScreen=self.sm.get_screen('pairingScreen')
+        self.sm.add_widget(NewPairingScreen(name='newPairingScreen'))
+        self.newPairingScreen=self.sm.get_screen('newPairingScreen')
 
-        self.sm.add_widget(AssignmentDetailScreen(name='assignmentDetailScreen'))
-        self.assignmentDetailScreen=self.sm.get_screen('assignmentDetailScreen')
+        self.sm.add_widget(PairingDetailScreen(name='pairingDetailScreen'))
+        self.pairingDetailScreen=self.sm.get_screen('pairingDetailScreen')
 
         self.assignedTeamsCount=0
         self.unassignedTeamsCount=0
@@ -332,33 +333,41 @@ class assignmentTrackerApp(App):
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+assignmentsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.7
     
-    def showAssignmentDetail(self,assignmentName,teamName=None):
-        Logger.info('showAssignmentDetail called:'+str(assignmentName)+' : '+str(teamName))
+    def showPairingDetail(self,assignmentName,teamName=None):
+        Logger.info('showPairingDetail called:'+str(assignmentName)+' : '+str(teamName))
         if teamName:
             status=tdbGetTeamStatusByName(teamName)
+            history=[[x['Entry'],x['RecordedBy'],time.strftime('%H:%M',time.localtime(x['Epoch']))] for x in
+                    tdbGetHistory(assignmentID=tdbGetAssignmentIDByName(assignmentName),teamID=tdbGetTeamIDByName(teamName))[::-1]]
         else:
             teamName='--'
             status='UNASSIGNED'
-        self.assignmentDetailScreen.ids.assignmentNameLabel.text=assignmentName
-        self.assignmentDetailScreen.ids.teamNameLabel.text=teamName
-        self.assignmentDetailScreen.ids.statusLabel.text=status
+            history=[[x['Entry'],x['RecordedBy'],time.strftime('%H:%M',time.localtime(x['Epoch']))] for x in
+                    tdbGetHistory(assignmentID=tdbGetAssignmentIDByName(assignmentName))[::-1]]
+        Logger.info("history:"+str(history))
+        history=[y for x in history for y in x] # flattened list, needed by RecycleGridLayout
+        self.pairingDetailScreen.ids.assignmentNameLabel.text=assignmentName
+        self.pairingDetailScreen.ids.historyRV.data=[{'text': str(x)} for x in history]
+        # self.pairingDetailScreen.ids.historyRV.refresh_from_data()
+        self.pairingDetailScreen.ids.teamNameLabel.text=teamName
+        self.pairingDetailScreen.ids.statusLabel.text=status
         self.pairingDetailBeingShown=[assignmentName,teamName]
-        self.assignmentDetailStatusUpdate()
-        self.sm.current='assignmentDetailScreen'
+        self.pairingDetailStatusUpdate()
+        self.sm.current='pairingDetailScreen'
 
-    def assignmentDetailStatusUpdate(self):
+    def pairingDetailStatusUpdate(self):
         teamName=self.pairingDetailBeingShown[1]
         if teamName=='--':
             return
         status=tdbGetTeamStatusByName(teamName)
         statusList=copy.copy(TEAM_STATUSES)
         statusList.remove(status)
-        self.assignmentDetailScreen.ids.statusSpinner.values=statusList
+        self.pairingDetailScreen.ids.statusSpinner.values=statusList
         currentIndex=TEAM_STATUSES.index(status)-1
         newIndex=currentIndex+1
         if newIndex==len(TEAM_STATUSES)-1:
             newIndex=0
-        self.assignmentDetailScreen.ids.statusSpinner.text=statusList[newIndex] # go to the next logical status by default
+        self.pairingDetailScreen.ids.statusSpinner.text=statusList[newIndex] # go to the next logical status by default
         
     def showNewTeam(self,*args):
         Logger.info('showNewTeam called')
@@ -370,7 +379,7 @@ class assignmentTrackerApp(App):
         self.updateNewAssignmentNameSpinner()
         self.sm.current='newAssignmentScreen'
 
-    def showPairing(self,assignmentName):
+    def showNewPairing(self,assignmentName):
         Logger.info('showPairing called: '+str(assignmentName))
         intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
         label=assignmentName+' : '+intendedResource
@@ -379,7 +388,7 @@ class assignmentTrackerApp(App):
             label=label+'\n'+status
         else:
             label=label+'\nASSIGNED TO team(s)'
-        self.pairingScreen.ids.changePairingLabel.text=label
+        self.newPairingScreen.ids.changePairingLabel.text=label
         part1=[] # unassigned teams, same resource type as intended resource
         part2=[] # unassigned teams, other resource types
         part3=[] # assigned teams, same resource type as intended resource
@@ -398,19 +407,19 @@ class assignmentTrackerApp(App):
                 else:
                     part4.append(entryText)
         theList=part1+part2+part3+part4
-        self.pairingScreen.ids.teamSpinner.values=theList
+        self.newPairingScreen.ids.teamSpinner.values=theList
         if theList:
-            self.pairingScreen.ids.teamSpinner.text=theList[0]
+            self.newPairingScreen.ids.teamSpinner.text=theList[0]
         else:
             # could show a warning here and disallow pairing before the screen raises
-            self.pairingScreen.ids.teamSpinner.text='No teams defined'
-        self.sm.current='pairingScreen'
+            self.newPairingScreen.ids.teamSpinner.text='No teams defined'
+        self.sm.current='newPairingScreen'
 
     def pair(self,assignmentName=None,teamName=None):
         if not assignmentName:
             assignmentName=self.pairingDetailBeingShown[0]
         if not teamName:
-            teamName=self.pairingScreen.ids.teamSpinner.text.split()[0]
+            teamName=self.newPairingScreen.ids.teamSpinner.text.split()[0]
         Logger.info("pairing assignment "+str(assignmentName)+" with team "+str(teamName))
         tdbPair(tdbGetAssignmentIDByName(assignmentName),tdbGetTeamIDByName(teamName))
         tdbSetTeamStatusByName(teamName,'ASSIGNED')
@@ -418,15 +427,15 @@ class assignmentTrackerApp(App):
 
     def changeTeamStatus(self,teamName=None,status=None):
         if not teamName:
-            [assignmentName,teamName]=self.pairingDetailBeingShown
+            teamName=self.pairingDetailBeingShown[1]
         if not status:
-            status=self.assignmentDetailScreen.ids.statusSpinner.text
+            status=self.pairingDetailScreen.ids.statusSpinner.text
         # if status==TEAM_STATUSES[0]: # changing to UNASSIGNED will move this pairing to 'previous'
         #     self.status
         Logger.info('changing status for team '+str(teamName)+' to '+str(status))
         tdbSetTeamStatusByName(teamName,status)
-        self.assignmentDetailScreen.ids.statusLabel.text=status
-        self.assignmentDetailStatusUpdate()
+        self.pairingDetailScreen.ids.statusLabel.text=status
+        self.pairingDetailStatusUpdate()
         
             
 
@@ -474,7 +483,7 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
                 # for i in list(range(rowNum*colCount,(rowNum+1)*colCount)):
                 #     theApp.assignmentsScreen.ids.assignmentsRV.data[i]['bg']=newBg
                 # theApp.assignmentsScreen.ids.assignmentsRV.refresh_from_data()
-                theApp.showAssignmentDetail(assignmentName,teamName)
+                theApp.showPairingDetail(assignmentName,teamName)
                 return True
         #     else:
         #         return self.parent.select_with_touch(self.index, touch)
@@ -502,9 +511,9 @@ class AssignmentsScreen(Screen):
     assignmentsRVList=ListProperty([])
 
 
-class AssignmentDetailScreen(Screen):
-    assignmentDetailCurrentRVList=ListProperty([])
-    assignmentDetailPreviousRVList=ListProperty([])
+class PairingDetailScreen(Screen):
+    pairingDetailCurrentRVList=ListProperty([])
+    pairingDetailPreviousRVList=ListProperty([])
 
 
 class NewTeamScreen(Screen):
@@ -515,7 +524,7 @@ class NewAssignmentScreen(Screen):
     pass
 
 
-class PairingScreen(Screen):
+class NewPairingScreen(Screen):
     pass
 
 
