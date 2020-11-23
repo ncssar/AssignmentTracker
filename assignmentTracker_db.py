@@ -31,8 +31,7 @@ TEAM_COLS=[
     # TeamID is hardcoded as the primary key
     ["TeamName","TEXT"],
     ["TeamStatus","TEXT DEFAULT 'UNASSIGNED'"],
-    ["Resource","TEXT DEFAULT 'Ground Type 2'"],
-    ["CompletedAssignments","TEXT DEFAULT '--'"]] # comma-delimited string
+    ["Resource","TEXT DEFAULT 'Ground Type 2'"]]
 
 ASSIGNMENT_COLS=[
     # AssignmentID is hardcoded as the primary key
@@ -43,8 +42,7 @@ ASSIGNMENT_COLS=[
 PAIRING_COLS=[
     ["TeamID","INTEGER"],
     ["AssignmentID","INTEGER"],
-    ["PairingStatus","TEXT"],
-    ["PreviousFlag","INTEGER DEFAULT 0"]] # 0 = current, 1 = previous
+    ["PairingStatus","TEXT DEFAULT 'CURRENT'"]] # CURRENT or PREVIOUS
 
 # History table: all activities are recorded in one table; each entry
 #   has columns for AsignmentID, TeamID, Entry, RecordedBy, Epoch;
@@ -256,6 +254,23 @@ def tdbGetAssignments(assignmentID=None):
 
 def tdbGetPairings():
     return q("SELECT * FROM 'Pairings';")
+
+def tdbGetPairingsByAssignment(assignmentID,currentOnly=False):
+    condition='AssignmentID='+str(assignmentID)
+    if currentOnly:
+        condition+=" AND PairingStatus='CURRENT'"
+    return q("SELECT * FROM 'Pairings' WHERE {condition};".format(condition=condition))
+
+def tdbGetPairingIDByNames(assignmentName,teamName):
+    assignmentID=tdbGetAssignmentIDByName(assignmentName)
+    teamID=tdbGetTeamIDByName(teamName)
+    condition='AssignmentID='+str(assignmentID)+' AND TeamID='+str(teamID)
+    query="SELECT PairingID FROM 'Pairings' WHERE {condition};".format(condition=condition)
+    return q(query)[0].get('PairingID',None)
+
+def tdbSetPairingStatus(pairingID,status):
+    query="UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE PairingID = "+str(pairingID)+";"
+    return q(query)
 
 def tdbSetTeamStatusByName(teamName,status):
     tdbAddHistoryEntry('Status changed to '+status,teamID=tdbGetTeamIDByName(teamName),recordedBy='SYSTEM')

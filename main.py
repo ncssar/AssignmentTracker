@@ -251,14 +251,17 @@ class assignmentTrackerApp(App):
         for entry in tdbTeams:
             id=entry['TeamID']
             pairings=[x for x in tdbPairings if x['TeamID']==id] # pairings that include this team
-            assignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in pairings]
+            currentPairings=[x for x in pairings if x['PairingStatus']=='CURRENT']
+            previousPairings=[x for x in pairings if x['PairingStatus']=='PREVIOUS']
+            currentAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in currentPairings]
+            previousAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in previousPairings]
             # Logger.info('Assignments for '+str(entry['TeamName'])+':'+str(assignments))
             self.teamsList.append([
                 entry['TeamName'],
                 entry['TeamStatus'],
                 entry['Resource'],
-                ','.join(assignments) or '--',
-                '--'])
+                ','.join(currentAssignments) or '--',
+                ','.join(previousAssignments) or '--'])
         Logger.info('teamsList at end of buildTeamsList:'+str(self.teamsList))
 
     def buildAssignmentsList(self):
@@ -276,7 +279,7 @@ class assignmentTrackerApp(App):
             pairings=[x for x in tdbPairings if x['AssignmentID']==id] # pairings that include this assignment
             if pairings:
                 for pairing in pairings:
-                    if pairing["PreviousFlag"]==1:
+                    if pairing['PairingStatus']=='PREVIOUS':
                         previous.append(tdbGetTeamNameByID(pairing["TeamID"]))
                     else:
                         current.append(tdbGetTeamNameByID(pairing["TeamID"]))
@@ -362,11 +365,12 @@ class assignmentTrackerApp(App):
         status=tdbGetTeamStatusByName(teamName)
         statusList=copy.copy(TEAM_STATUSES)
         statusList.remove(status)
+        statusList.append('DONE')
         self.pairingDetailScreen.ids.statusSpinner.values=statusList
         currentIndex=TEAM_STATUSES.index(status)-1
         newIndex=currentIndex+1
-        if newIndex==len(TEAM_STATUSES)-1:
-            newIndex=0
+        # if newIndex==len(TEAM_STATUSES)-1: # wrap from last status to first status
+        #     newIndex=0
         self.pairingDetailScreen.ids.statusSpinner.text=statusList[newIndex] # go to the next logical status by default
         
     def showNewTeam(self,*args):
@@ -430,12 +434,24 @@ class assignmentTrackerApp(App):
             teamName=self.pairingDetailBeingShown[1]
         if not status:
             status=self.pairingDetailScreen.ids.statusSpinner.text
-        # if status==TEAM_STATUSES[0]: # changing to UNASSIGNED will move this pairing to 'previous'
-        #     self.status
-        Logger.info('changing status for team '+str(teamName)+' to '+str(status))
-        tdbSetTeamStatusByName(teamName,status)
-        self.pairingDetailScreen.ids.statusLabel.text=status
-        self.pairingDetailStatusUpdate()
+        if status=='DONE': # changing to DONE from pairing detail screen will 'close out' the current pairing
+            [assignmentName,teamName]=self.pairingDetailBeingShown
+            # 1. set pairing status to PREVIOUS
+            tdbSetPairingStatus(tdbGetPairingIDByNames(assignmentName,teamName),'PREVIOUS')
+            # 2. set team status to UNASSIGNED
+            tdbSetTeamStatusByName(teamName,'UNASSIGNED')
+            # 3. if this was the only current pairing involving the paired assignment,
+            #  set that assignment's status to UNASSIGNED
+            others=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
+            Logger.info('others:'+str(others))
+            if not others:
+                tdbSetAssignmentStatusByName(assignmentName,'UNASSIGNED')
+            self.showAssignments()
+        else:
+            Logger.info('changing status for team '+str(teamName)+' to '+str(status))
+            tdbSetTeamStatusByName(teamName,status)
+            self.pairingDetailScreen.ids.statusLabel.text=status
+            self.pairingDetailStatusUpdate()
         
             
 
