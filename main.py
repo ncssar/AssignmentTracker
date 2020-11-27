@@ -45,6 +45,7 @@ from functools import partial
 import urllib.parse
 import certifi # attempt to fix SSL shared-token problem on Android
 # from plyer import wifi
+import pusher
 
 # # database interface module shared by this app and the assignmentTracker_api
 from assignmentTracker_db import *
@@ -129,6 +130,7 @@ class assignmentTrackerApp(App):
         self.sm=ScreenManager()
         self.pairingDetailBeingShown=[]
         self.pairingHistoryRVList=[1,2,3,4,5]
+        self.cloud=False
 
         self.device='SITUATION UNIT'
         self.callsignPool=list(map(str,range(101,200)))
@@ -167,6 +169,25 @@ class assignmentTrackerApp(App):
         self.unassignedAssignmentsCount=0
 
         tdbInit()
+        # cloudInit()
+
+        self.pusher_appid=None
+        self.pusher_key=None
+        self.pusher_secret=None
+        self.pusher_cluster=None
+        self.pusher_appid=os.getenv('TRACKER_PUSHER_APPID')
+        self.pusher_key=os.getenv('TRACKER_PUSHER_KEY')
+        self.pusher_secret=os.getenv('TRACKER_PUSHER_SECRET')
+        self.pusher_cluster=os.getenv('TRACKER_PUSHER_CLUSTER')
+
+        self.pusher_client = pusher.Pusher(
+            app_id=self.pusher_appid,
+            key=self.pusher_key,
+            secret=self.pusher_secret,
+            cluster=self.pusher_cluster,
+            ssl=True)
+
+
         # some hardcoded initial data for development
         self.newTeam('101','Ground Type 1')
         self.newTeam('102','K9 (HRD)')
@@ -194,15 +215,63 @@ class assignmentTrackerApp(App):
         
         return self.container
 
+    # # cloudInit - check for connection to cloud server, and make a clean
+    # #   database if needed
+    # def cloudInit(self):
     def newTeam(self,name=None,resource=None):
         name=name or self.callsignPool.pop(0)
         if name in self.callsignPool:
             self.callsignPool.remove(name)
         resource=resource or self.newTeamScreen.ids.resourceSpinner.text
+        d={'TeamName':name,'Resource':resource}
+        j=json.dumps(d)
         r=tdbNewTeam(name,resource)
-        Logger.info('return from newTeam:')
-        Logger.info(r)
+        if self.cloud:
+            headers={'Content-type': 'application/json','Accept': 'text/plain','Authorization':'Bearer '+self.tracker_api_key}
+            request=UrlRequest(self.cloudServer+"/api/v1/newTeam",
+                    on_success=self.on_cloudNewTeam_success,
+                    on_failure=self.on_cloudNewTeam_error,
+                    on_error=self.on_cloudNewTeam_error,
+                    req_headers=headers,
+                    req_body=j,
+                    method="POST",
+                    debug=True)            
+            Logger.info('return from newTeam:')
+            Logger.info(r)
         self.updateNewTeamNameSpinner()
+        self.buildTeamsList()
+
+    def on_cloudNewTeam_success(self,request,response):
+        Logger.info("on_cloudNewTeam_success called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(response))
+
+    def on_cloudNewTeam_error(self,request,response):
+        Logger.info("on_cloudNewTeam_error called:")
+        Logger.info("  request was sent to "+str(request.url))
+        Logger.info("    request body="+str(request.req_body))
+        Logger.info("    request headers="+str(request.req_headers))
+        Logger.info("  result="+str(response))
+
+    # def finalize(self):
+    #     Logger.info("Finalize called at "+datetime.datetime.now().isoformat())
+    #     self.finalized=True # should make sure that everyone is signed out first!
+    #     if self.cloudEventID and self.cloud:
+    #         self.finalizePopup=self.textpopup(
+    #                 title='Finalize',
+    #                 text='Request sent to cloud; this may take up to a minute...',
+    #                 buttonText='Close',
+    #                 size_hint=(0.8,0.5))
+    #         headers={'Content-type': 'application/json','Accept': 'text/plain','Authorization':'Bearer '+self.signin_api_key}
+    #         request=UrlRequest(self.cloudServer+"/api/v1/finalize/"+str(self.cloudEventID),
+    #                 on_success=self.on_cloudFinalize_success,
+    #                 on_failure=self.on_cloudFinalize_error,
+    #                 on_error=self.on_cloudFinalize_error,
+    #                 req_headers=headers,
+    #                 method="POST",
+    #                 debug=True)
 
     def newAssignment(self,name=None,intendedResource=None):
         name=name or self.assignmentNamePool.pop(0)
@@ -213,6 +282,7 @@ class assignmentTrackerApp(App):
         Logger.info('return from newAssignment:')
         Logger.info(r)
         self.updateNewAssignmentNameSpinner()
+        self.buildAssignmentsList()
 
     def updateNewTeamNameSpinner(self):
         self.newTeamScreen.ids.nameSpinner.values=self.callsignPool[0:8]
@@ -262,7 +332,17 @@ class assignmentTrackerApp(App):
                 entry['Resource'],
                 ','.join(currentAssignments) or '--',
                 ','.join(previousAssignments) or '--'])
+        self.pushTeamsTable()
         Logger.info('teamsList at end of buildTeamsList:'+str(self.teamsList))
+
+    def pushTeamsTable(self):
+        # no-module table writer based on https://stackoverflow.com/a/49889528
+        cols=["Team","Status","Resource","Current","Previous"]
+        d=self.teamsList
+        table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
+        table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
+        table+='\n</table>'
+        self.pusher_client.trigger('my-channel', 'teamsViewUpdate', table)
 
     def buildAssignmentsList(self):
         Logger.info('******************** buildAssignmentsList called')
@@ -290,6 +370,15 @@ class assignmentTrackerApp(App):
             for teamName in previous:
                 self.previousAssignments.append([assignmentName,teamName,'COMPLETED',tdbGetTeamResourceByName(teamName)])
         self.assignmentsList+=self.previousAssignments # list completed assignments at the end, until a separate list display is arranged
+        self.pushAssignmentsTable()
+
+    def pushAssignmentsTable(self):
+        cols=["Assignment","Team","Status","Resource"]
+        d=self.assignmentsList
+        table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
+        table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
+        table+='\n</table>'
+        self.pusher_client.trigger('my-channel', 'assignmentsViewUpdate', table)
 
     def showTeams(self,*args):
         Logger.info('showTeams called')
@@ -335,7 +424,9 @@ class assignmentTrackerApp(App):
         self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.line_height=0.95
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+assignmentsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.7
-    
+
+        self.pusher_client.trigger('my-channel', 'countsUpdate', json.dumps({"teams":teamsCountText,"assignments":assignmentsCountText}))
+
     def showPairingDetail(self,assignmentName,teamName=None):
         Logger.info('showPairingDetail called:'+str(assignmentName)+' : '+str(teamName))
         if teamName:

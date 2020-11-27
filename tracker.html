@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<head>
+  <title>Pusher Test</title>
+  <style>
+    h1 {
+      font-family: "Segoe UI",Arial,sans-serif;
+      font-weight: 400;
+    }
+    html, body {
+      font-family: Verdana,sans-serif;
+    }
+    button {
+      height:50px;
+      width:200px;
+      top:0px;
+    }
+    table, th, td {
+      border: 1px solid black;
+      border-collapse: collapse;
+      padding: 5px;
+      text-align: center;
+    }
+    #buttonsDiv {
+      height:50px;
+      margin:5px;
+      padding:0px;
+      border:0px;
+      display:table;
+    }
+    #tablesDiv {
+      position: relative;
+    }
+    #teamsDiv, #assignmentsDiv {
+      visibility: hidden;
+      position:absolute;
+      top: 0px;
+    }
+    .big {
+      font-size:26px;
+      margin:0px;
+    }
+    .small {
+      font-size:16px;
+      margin:0px;
+      margin-top:9px; /* not sure why but this prevents the button from shifting up */
+    }
+  </style>
+  <script src="https://js.pusher.com/7.0/pusher.min.js"></script>
+  <script>
+
+    // Enable pusher logging - don't include this in production
+    Pusher.logToConsole = true;
+
+    var pusher = new Pusher('7330e066036560fc808c', {
+      cluster: 'us3'
+    });
+
+    var channel = pusher.subscribe('my-channel');
+    channel.bind('teamsViewUpdate', function(data) {
+         var pusherDisplay = document.getElementById('teamsDiv');
+         pusherDisplay.innerHTML = data;	
+    });
+    channel.bind('assignmentsViewUpdate', function(data) {
+         var pusherDisplay = document.getElementById('assignmentsDiv');
+         pusherDisplay.innerHTML = data;	
+    });
+    channel.bind('countsUpdate', function(data) {
+        // alert(JSON.stringify(data));
+         var teamsCount = document.getElementById('teamsCount');
+         var assignmentsCount = document.getElementById('assignmentsCount');
+        //  const obj=JSON.parse(data);
+         teamsCount.innerHTML = data.teams;
+         assignmentsCount.innerHTML = data.assignments;	
+    });
+
+    function showTeamsView(){
+      // document.getElementById("TeamsButtonHeader").style.fontSize="20pt";
+      // document.getElementById("AssignmentsButtonHeader").style.fontSize="10pt";
+      document.getElementById("teamsDiv").style.visibility='visible';
+      document.getElementById("assignmentsDiv").style.visibility='hidden';
+      document.getElementById("TeamsButtonHeader").className='big';
+      document.getElementById("AssignmentsButtonHeader").className='small';
+    }
+    
+    function showAssignmentsView(){
+      // document.getElementById("TeamsButtonHeader").style.fontSize="10pt";
+      // document.getElementById("AssignmentsButtonHeader").style.fontSize="20pt";
+      document.getElementById("teamsDiv").style.visibility='hidden';
+      document.getElementById("assignmentsDiv").style.visibility='visible';
+      document.getElementById("TeamsButtonHeader").className='small';
+      document.getElementById("AssignmentsButtonHeader").className='big';
+    }
+  </script>
+</head>
+<body>
+  <div id="buttonsDiv">
+    <button type="button" onclick="showTeamsView()">
+      <div id="TeamsButtonHeader">Teams</div>
+      <span id="teamsCount" font-size:8px;>Assigned: 3&nbspUnassigned: 3</span>
+    </button>
+    <button type="button" onclick="showAssignmentsView()">
+      <div id="AssignmentsButtonHeader">Assignments</div>
+      <span id="assignmentsCount" font-size:8px;>Assigned: 3&nbspUnassigned: 3</span>
+    </button>
+  </div>
+  <div id='tablesDiv'>
+    <div id = 'teamsDiv'>Your result will display here</div>
+    <div id = 'assignmentsDiv'>Your result will display here</div>
+  </div>
+</body>
