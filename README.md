@@ -24,3 +24,24 @@ Ideas for this project:
 ** consider security of shared data - this data could be used to track the progress of a search, which is generally sensitive and non-public
 
 See examples on google docs: https://docs.google.com/spreadsheets/d/1OT0F97mIuSGyYnWuem34H2Ldpt0NmdrkRepA87KEhBo/edit?usp=sharing
+
+## Multiple clients
+- This app supports and syncs the following clients simultaneously:
+  - one or more Kivy clients (Windows or Android)
+  - any number of web browsers (any platform; nothing to install)
+- Kivy clients are read/write (can write to the centralized database)
+- web browsers are read-only
+- different Kivy nodes (assigned to different ICS positions/personnel) will have different authority to enter data at different stages
+
+## Database and Data Flow
+- data is sent from Kivy client(s) to the centralized sqlite3 database using HTTP API
+- database location could be one (or more?) of:
+  - online / internet (pythonanywhere.com)
+  - intranet (trailer server)
+  - localhost (Windows or (eventually) Android)
+- on each database change, the server pushes over websockets to all listeners:
+  - entire teams view list
+  - entire assignments view list
+  - new history entries
+- web browser clients are responsible for creating html tables in javascript, using the pushed data
+- deeper data (history, etc) must be requested by the client using HTTP API
