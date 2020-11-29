@@ -528,7 +528,7 @@ class assignmentTrackerApp(App):
         if status=='DONE': # changing to DONE from pairing detail screen will 'close out' the current pairing
             [assignmentName,teamName]=self.pairingDetailBeingShown
             # 1. set pairing status to PREVIOUS
-            tdbSetPairingStatus(tdbGetPairingIDByNames(assignmentName,teamName),'PREVIOUS')
+            tdbSetPairingStatusByID(tdbGetPairingIDByNames(assignmentName,teamName),'PREVIOUS')
             # 2. set team status to UNASSIGNED
             tdbSetTeamStatusByName(teamName,'UNASSIGNED')
             # 3. if this was the only current pairing involving the paired assignment,

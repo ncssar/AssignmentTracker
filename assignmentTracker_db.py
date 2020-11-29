@@ -24,7 +24,7 @@ import json
 import time
 import os
 
-# use one table for teams, one table for assigments, and reduce duplication of data;
+# use one table for teams, one table for assignments, and reduce duplication of data;
 #  store the pairing data in a separete table
 
 TEAM_COLS=[
@@ -246,14 +246,19 @@ def tdbGetTeams(teamID=None):
 def tdbGetAssignments(assignmentID=None):
     # createAssignmentsTableIfNeeded()
     if assignmentID:
-        condition='AssigmentID='+str(assignmentID)
+        condition='AssignmentID='+str(assignmentID)
     else:
         condition='1'
     return q("SELECT * FROM 'Assignments' WHERE {condition};".format(
             condition=condition))
 
-def tdbGetPairings():
-    return q("SELECT * FROM 'Pairings';")
+def tdbGetPairings(pairingID=None):
+    if pairingID:
+        condition='PairingID='+str(pairingID)
+    else:
+        condition='1'
+    return q("SELECT * FROM 'Pairings' WHERE {condition};".format(
+            condition=condition))
 
 def tdbGetPairingsByAssignment(assignmentID,currentOnly=False):
     condition='AssignmentID='+str(assignmentID)
@@ -268,14 +273,40 @@ def tdbGetPairingIDByNames(assignmentName,teamName):
     query="SELECT PairingID FROM 'Pairings' WHERE {condition};".format(condition=condition)
     return q(query)[0].get('PairingID',None)
 
-def tdbSetPairingStatus(pairingID,status):
-    query="UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE PairingID = "+str(pairingID)+";"
-    return q(query)
+def tdbSetPairingStatusByID(pairingID,status):
+    # what history entries if any should happen here?
+    q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE PairingID = '"+str(pairingID)+"';")
+    r=q("SELECT * FROM 'Pairings' WHERE PairingID = "+str(pairingID)+";")
+    if r:
+        validate=r[0]
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
+    
+def tdbSetTeamStatusByID(teamID,status):
+    tdbAddHistoryEntry('Status changed to '+status,teamID=teamID,recordedBy='SYSTEM')
+    q("UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamID = '"+str(teamID)+"';")
+    r=q("SELECT * FROM 'Teams' WHERE TeamID = "+str(teamID)+";")
+    if r:
+        validate=r[0]
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
 
 def tdbSetTeamStatusByName(teamName,status):
     tdbAddHistoryEntry('Status changed to '+status,teamID=tdbGetTeamIDByName(teamName),recordedBy='SYSTEM')
     query="UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamName = '"+str(teamName)+"';"
     return q(query)
+
+def tdbSetAssignmentStatusByID(assignmentID,status):
+    tdbAddHistoryEntry('Status changed to '+status,assignmentID=assignmentID,recordedBy='SYSTEM')
+    q("UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE AssignmentID = '"+str(assignmentID)+"';")
+    r=q("SELECT * FROM 'Assignments' WHERE AssignmentID = "+str(assignmentID)+";")
+    if r:
+        validate=r[0]
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
 
 def tdbSetAssignmentStatusByName(assignmentName,status):
     query="UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE AssignmentName = '"+str(assignmentName)+"';"
@@ -289,7 +320,10 @@ def tdbPair(assignmentID,teamID):
     assignmentName=tdbGetAssignmentNameByID(assignmentID)
     teamName=tdbGetTeamNameByID(teamID)
     tdbAddHistoryEntry("Pairing Created: Assignment "+assignmentName+" <=> Team "+teamName,assignmentID=assignmentID,teamID=teamID,recordedBy='SYSTEM')
-    return qInsert('Pairings',{'AssignmentID':assignmentID,'TeamID':teamID})
+    qInsert('Pairings',{'AssignmentID':assignmentID,'TeamID':teamID})
+    r=q('SELECT * FROM Pairings ORDER BY PairingID DESC LIMIT 1;')
+    validate=r[0]
+    return {'validate':validate}
 
 def tdbUpdateTeamLastEditEpoch(teamID):
     query="UPDATE 'Teams' SET LastEditEpoch = "+str(round(time.time(),2))+" WHERE TeamID="+str(teamID)+";"
