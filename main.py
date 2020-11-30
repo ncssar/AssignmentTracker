@@ -239,7 +239,7 @@ class assignmentTrackerApp(App):
             Logger.info('return from newTeam:')
             Logger.info(r)
         self.updateNewTeamNameSpinner()
-        self.buildTeamsList()
+        self.buildLists()
 
     def on_cloudNewTeam_success(self,request,response):
         Logger.info("on_cloudNewTeam_success called:")
@@ -282,7 +282,7 @@ class assignmentTrackerApp(App):
         Logger.info('return from newAssignment:')
         Logger.info(r)
         self.updateNewAssignmentNameSpinner()
-        self.buildAssignmentsList()
+        self.buildLists()
 
     def updateNewTeamNameSpinner(self):
         self.newTeamScreen.ids.nameSpinner.values=self.callsignPool[0:8]
@@ -313,78 +313,23 @@ class assignmentTrackerApp(App):
 #         Params = autoclass('android.view.WindowManager$LayoutParams')
 #         PythonActivity.mActivity.getWindow().clearFlags(Params.FLAG_KEEP_SCREEN_ON)
 
-    def buildTeamsList(self):
-        Logger.info('****************** buildTeamsList called')
-        self.teamsList=[]
-        tdbTeams=tdbGetTeams()
-        tdbPairings=tdbGetPairings()
-        for entry in tdbTeams:
-            id=entry['TeamID']
-            pairings=[x for x in tdbPairings if x['TeamID']==id] # pairings that include this team
-            currentPairings=[x for x in pairings if x['PairingStatus']=='CURRENT']
-            previousPairings=[x for x in pairings if x['PairingStatus']=='PREVIOUS']
-            currentAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in currentPairings]
-            previousAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in previousPairings]
-            # Logger.info('Assignments for '+str(entry['TeamName'])+':'+str(assignments))
-            self.teamsList.append([
-                entry['TeamName'],
-                entry['TeamStatus'],
-                entry['Resource'],
-                ','.join(currentAssignments) or '--',
-                ','.join(previousAssignments) or '--'])
-        self.pushTeamsTable()
-        Logger.info('teamsList at end of buildTeamsList:'+str(self.teamsList))
+    def buildLists(self):
+        self.teamsList=tdbGetTeamsView()
+        self.assignmentsList=tdbGetAssignmentsView()
+        self.updateCounts()
+        tdbPushTables('ws://localhost:8765',self.teamsList,self.assignmentsList,self.teamsCountText,self.assignmentsCountText)
 
-    def pushTeamsTable(self):
-        # no-module table writer based on https://stackoverflow.com/a/49889528
-        cols=["Team","Status","Resource","Current","Previous"]
-        d=self.teamsList
-        table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
-        table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
-        table+='\n</table>'
-        self.pusher_client.trigger('my-channel', 'teamsViewUpdate', table)
-
-    def buildAssignmentsList(self):
-        Logger.info('******************** buildAssignmentsList called')
-        self.assignmentsList=[]
-        self.previousAssignments=[]
-        tdbAssignments=tdbGetAssignments()
-        tdbPairings=tdbGetPairings()
-        for entry in tdbAssignments:
-            id=entry['AssignmentID']
-            assignmentName=entry['AssignmentName']
-            assignmentStatus=entry['AssignmentStatus']
-            previous=[]
-            current=[]
-            pairings=[x for x in tdbPairings if x['AssignmentID']==id] # pairings that include this assignment
-            if pairings:
-                for pairing in pairings:
-                    if pairing['PairingStatus']=='PREVIOUS':
-                        previous.append(tdbGetTeamNameByID(pairing["TeamID"]))
-                    else:
-                        current.append(tdbGetTeamNameByID(pairing["TeamID"]))
-            else:
-                self.assignmentsList.append([assignmentName,'--',assignmentStatus,tdbGetAssignmentIntendedResourceByName(assignmentName)])
-            for teamName in current:
-                self.assignmentsList.append([assignmentName,teamName,tdbGetTeamStatusByName(teamName),tdbGetTeamResourceByName(teamName)])
-            for teamName in previous:
-                self.previousAssignments.append([assignmentName,teamName,'COMPLETED',tdbGetTeamResourceByName(teamName)])
-        self.assignmentsList+=self.previousAssignments # list completed assignments at the end, until a separate list display is arranged
-        self.pushAssignmentsTable()
-
-    def pushAssignmentsTable(self):
-        cols=["Assignment","Team","Status","Resource"]
-        d=self.assignmentsList
-        table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
-        table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
-        table+='\n</table>'
-        self.pusher_client.trigger('my-channel', 'assignmentsViewUpdate', table)
+    # def pushAssignmentsTable(self):
+    #     cols=["Assignment","Team","Status","Resource"]
+    #     d=self.assignmentsList
+    #     table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
+    #     table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
+    #     table+='\n</table>'
+    #     self.pusher_client.trigger('my-channel', 'assignmentsViewUpdate', table)
 
     def showTeams(self,*args):
         Logger.info('showTeams called')
-        self.buildTeamsList()
-        self.buildAssignmentsList()
-        self.updateCounts()                  
+        self.buildLists()                
         # recycleview needs a single list of strings; it divides into rows every nth element
         self.teamsScreen.teamsRVList=[]
         for entry in self.teamsList:
@@ -395,9 +340,7 @@ class assignmentTrackerApp(App):
 
     def showAssignments(self,*args):
         Logger.info("showAssignments called")
-        self.buildTeamsList()
-        self.buildAssignmentsList()
-        self.updateCounts()              
+        self.buildLists()             
         # recycleview needs a single list of strings; it divides into rows every nth element
         self.assignmentsScreen.assignmentsRVList=[]
         for entry in self.assignmentsList:
@@ -412,20 +355,20 @@ class assignmentTrackerApp(App):
         self.assignedTeamsCount=len(self.teamsList)-self.unassignedTeamsCount
         self.unassignedAssignmentsCount=len([x for x in self.assignmentsList if x[2]=='UNASSIGNED'])
         self.assignedAssignmentsCount=len(self.assignmentsList)-self.unassignedAssignmentsCount
-        teamsCountText=str(self.assignedTeamsCount)+' Assigned,     '+str(self.unassignedTeamsCount)+' Unassigned'
-        assignmentsCountText=str(self.assignedAssignmentsCount)+' Assigned,     '+str(self.unassignedAssignmentsCount)+' Unassigned'
+        self.teamsCountText=str(self.assignedTeamsCount)+' Assigned,     '+str(self.unassignedTeamsCount)+' Unassigned'
+        self.assignmentsCountText=str(self.assignedAssignmentsCount)+' Assigned,     '+str(self.unassignedAssignmentsCount)+' Unassigned'
 
-        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=35]Teams\n[size=12]'+teamsCountText
+        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=35]Teams\n[size=12]'+self.teamsCountText
         self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.line_height=0.7
-        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=20]Assignments\n[size=12]'+assignmentsCountText
+        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=20]Assignments\n[size=12]'+self.assignmentsCountText
         self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.95
         
-        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=20]Teams\n[size=12]'+teamsCountText
+        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=20]Teams\n[size=12]'+self.teamsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.line_height=0.95
-        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+assignmentsCountText
+        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+self.assignmentsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.7
 
-        self.pusher_client.trigger('my-channel', 'countsUpdate', json.dumps({"teams":teamsCountText,"assignments":assignmentsCountText}))
+        # self.pusher_client.trigger('my-channel', 'countsUpdate', json.dumps({"teams":teamsCountText,"assignments":assignmentsCountText}))
 
     def showPairingDetail(self,assignmentName,teamName=None):
         Logger.info('showPairingDetail called:'+str(assignmentName)+' : '+str(teamName))

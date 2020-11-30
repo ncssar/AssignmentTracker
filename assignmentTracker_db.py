@@ -83,6 +83,34 @@ def q(query,params=None):
     print("  result:" +str(r))
     return r
 
+import asyncio
+import websockets
+# uri = "ws://localhost:8765"
+
+import pusher
+
+pusher_client = pusher.Pusher(
+  app_id='1113976',
+  key='7330e066036560fc808c',
+  secret='839f98d537bcafe799b6',
+  cluster='us3',
+  ssl=True
+)
+
+# wrap the asynchronous send function inside a synchronous function
+
+def wsSend(uri,msg):
+    async def send():
+        async with websockets.connect(uri) as websocket:
+            # await websocket.send(str.encode(str(msg)))
+            await websocket.send(json.dumps({"msg":msg}))
+            # print(f"> {msg}")
+
+            # greeting = await websocket.recv()
+            # print(f"< {greeting}")
+
+    asyncio.get_event_loop().run_until_complete(send())
+
 def createTeamsTableIfNeeded():
     colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in TEAM_COLS])
@@ -182,6 +210,7 @@ def tdbNewTeam(name,resource):
     r=q('SELECT * FROM Teams ORDER BY TeamID DESC LIMIT 1;')
     tdbAddHistoryEntry("Team "+name+" Created",teamID=r[0]["TeamID"],recordedBy='SYSTEM')
     validate=r[0]
+    # wsSend(json.dumps(validate))
     return {'validate':validate}
 
 def tdbNewAssignment(name,intendedResource):
@@ -243,6 +272,56 @@ def tdbGetTeams(teamID=None):
     return q("SELECT * FROM 'Teams' WHERE {condition};".format(
             condition=condition))
 
+# tdbGetTeamsView - return a list of rows, which can be used directly by kivy
+#    to create the teams view RecycleView data, or, to generate the html table
+#    for downstream html views i.e. pushed using websockets
+def tdbGetTeamsView():
+    print('****************** tdbGetTeamsView called')
+    teamsList=[]
+    tdbTeams=tdbGetTeams()
+    tdbPairings=tdbGetPairings()
+    for entry in tdbTeams:
+        id=entry['TeamID']
+        pairings=[x for x in tdbPairings if x['TeamID']==id] # pairings that include this team
+        currentPairings=[x for x in pairings if x['PairingStatus']=='CURRENT']
+        previousPairings=[x for x in pairings if x['PairingStatus']=='PREVIOUS']
+        currentAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in currentPairings]
+        previousAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in previousPairings]
+        # Logger.info('Assignments for '+str(entry['TeamName'])+':'+str(assignments))
+        teamsList.append([
+            entry['TeamName'],
+            entry['TeamStatus'],
+            entry['Resource'],
+            ','.join(currentAssignments) or '--',
+            ','.join(previousAssignments) or '--'])
+    print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
+    return teamsList
+
+def tdbPushTables(uri,teamsViewList=None,assignmentsViewList=None,teamsCountText="---",assignmentsCountText="---"):
+    # uri = "ws://localhost:8765"
+    if not teamsViewList:
+        teamsViewList=tdbGetTeamsView()
+    if not assignmentsViewList:
+        assignmentsViewList=tdbGetAssignmentsView()
+    if uri=='pusher':
+        pusher_client.trigger('my-channel','teamsViewUpdate',teamsViewList)
+        pusher_client.trigger('my-channel','assignmentsViewUpdate',teamsViewList)
+    else:
+        wsSend(uri,json.dumps({
+                "teamsView":teamsViewList,
+                "assignmentsView":assignmentsViewList,
+                "teamsCount":teamsCountText,
+                "assignmentsCount":assignmentsCountText}))
+
+    # def pushTeamsTable(self):
+    #     # no-module table writer based on https://stackoverflow.com/a/49889528
+    #     cols=["Team","Status","Resource","Current","Previous"]
+    #     d=self.teamsList
+    #     table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
+    #     table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
+    #     table+='\n</table>'
+    #     self.pusher_client.trigger('my-channel', 'teamsViewUpdate', table)
+
 def tdbGetAssignments(assignmentID=None):
     # createAssignmentsTableIfNeeded()
     if assignmentID:
@@ -252,6 +331,35 @@ def tdbGetAssignments(assignmentID=None):
     return q("SELECT * FROM 'Assignments' WHERE {condition};".format(
             condition=condition))
 
+def tdbGetAssignmentsView():
+    # note that this is really a list of pairings (one pairing per row)
+    print('******************** tdbGetAssignmentsView called')
+    assignmentsList=[]
+    previousAssignments=[]
+    tdbAssignments=tdbGetAssignments()
+    tdbPairings=tdbGetPairings()
+    for entry in tdbAssignments:
+        id=entry['AssignmentID']
+        assignmentName=entry['AssignmentName']
+        assignmentStatus=entry['AssignmentStatus']
+        previous=[]
+        current=[]
+        pairings=[x for x in tdbPairings if x['AssignmentID']==id] # pairings that include this assignment
+        if pairings:
+            for pairing in pairings:
+                if pairing['PairingStatus']=='PREVIOUS':
+                    previous.append(tdbGetTeamNameByID(pairing["TeamID"]))
+                else:
+                    current.append(tdbGetTeamNameByID(pairing["TeamID"]))
+        else:
+            assignmentsList.append([assignmentName,'--',assignmentStatus,tdbGetAssignmentIntendedResourceByName(assignmentName)])
+        for teamName in current:
+            assignmentsList.append([assignmentName,teamName,tdbGetTeamStatusByName(teamName),tdbGetTeamResourceByName(teamName)])
+        for teamName in previous:
+            previousAssignments.append([assignmentName,teamName,'COMPLETED',tdbGetTeamResourceByName(teamName)])
+    assignmentsList+=previousAssignments # list completed assignments at the end, until a separate list display is arranged
+    return assignmentsList
+    
 def tdbGetPairings(pairingID=None):
     if pairingID:
         condition='PairingID='+str(pairingID)
