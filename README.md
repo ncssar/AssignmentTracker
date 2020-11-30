@@ -45,3 +45,10 @@ See examples on google docs: https://docs.google.com/spreadsheets/d/1OT0F97mIuSG
   - new history entries
 - web browser clients are responsible for creating html tables in javascript, using the pushed data
 - deeper data (history, etc) must be requested by the client using HTTP API
+
+## Localhost server usage 11-30-2020
+1. run the localhost websocket server (trackerWSServer.py)
+2. open one or more browsers to tracker_local.html
+3. run main.py (the Kivy app) and start making changes - watch them show up in the browsers
+
+- pusher.com syncing has been disabled for now, to allow localhost syncing to work; still need to add code to (automatically?) select the connection type: pusher.com, or intranet, or localhost (or android?) 
