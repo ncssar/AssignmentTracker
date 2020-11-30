@@ -87,16 +87,6 @@ import asyncio
 import websockets
 # uri = "ws://localhost:8765"
 
-import pusher
-
-pusher_client = pusher.Pusher(
-  app_id='1113976',
-  key='7330e066036560fc808c',
-  secret='839f98d537bcafe799b6',
-  cluster='us3',
-  ssl=True
-)
-
 # wrap the asynchronous send function inside a synchronous function
 
 def wsSend(uri,msg):
