@@ -91,10 +91,18 @@
     function createTable(tableData,container) {
       var table = document.createElement('table');
       var tableBody = document.createElement('tbody');
-
+      // color mapping from https://dev.to/k_penguin_sato/use-lookup-tables-for-cleaning-up-your-js-ts-code-9gk
+      var colorMap={
+          'UNASSIGNED': '#cfc',
+          'ASSIGNED': '#fff',
+          'WORKING': '#fff',
+          'ENROUTE TO IC': '#fcc',
+          'DEBRIEFING': '#ccf'};
+      const statusToColor=(status)=>colorMap[status]||"gray";
       tableData.forEach(function(rowData) {
+        var status=rowData[1];
         var row = document.createElement('tr');
-
+        row.style.backgroundColor=statusToColor(status);
         rowData.forEach(function(cellData) {
           var cell = document.createElement('td');
           cell.appendChild(document.createTextNode(cellData));

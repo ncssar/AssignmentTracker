@@ -23,6 +23,7 @@ import sqlite3
 import json
 import time
 import os
+from websocket import create_connection # not websockets; websocket (singular) allows simple synchronous send
 
 # use one table for teams, one table for assignments, and reduce duplication of data;
 #  store the pairing data in a separete table
@@ -83,23 +84,10 @@ def q(query,params=None):
     print("  result:" +str(r))
     return r
 
-import asyncio
-import websockets
-# uri = "ws://localhost:8765"
-
-# wrap the asynchronous send function inside a synchronous function
-
 def wsSend(uri,msg):
-    async def send():
-        async with websockets.connect(uri) as websocket:
-            # await websocket.send(str.encode(str(msg)))
-            await websocket.send(json.dumps({"msg":msg}))
-            # print(f"> {msg}")
-
-            # greeting = await websocket.recv()
-            # print(f"< {greeting}")
-
-    asyncio.get_event_loop().run_until_complete(send())
+    ws=create_connection(uri)
+    ws.send(json.dumps({"msg":msg}))
+    ws.close()
 
 def createTeamsTableIfNeeded():
     colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT,"
