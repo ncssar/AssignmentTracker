@@ -268,9 +268,9 @@ def tdbGetTeamsView():
         # Logger.info('Assignments for '+str(entry['TeamName'])+':'+str(assignments))
         teamsList.append([
             entry['TeamName'],
+            ','.join(currentAssignments) or '--',
             entry['TeamStatus'],
             entry['Resource'],
-            ','.join(currentAssignments) or '--',
             ','.join(previousAssignments) or '--'])
     print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
     return teamsList
