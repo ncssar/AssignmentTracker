@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <head>
-  <title>Pusher Test</title>
+  <title>Assignment Tracker</title>
   <style>
     h1 {
       font-family: "Segoe UI",Arial,sans-serif;
@@ -19,6 +19,18 @@
       border-collapse: collapse;
       padding: 5px;
       text-align: center;
+      font-size:16px;
+      table-layout: fixed;
+      text-overflow: ellipsis;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -khtml-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+    th {
+      font-size:12px;
     }
     #buttonsDiv {
       height:50px;
@@ -44,38 +56,191 @@
       margin:0px;
       margin-top:9px; /* not sure why but this prevents the button from shifting up */
     }
+    /* CSS arrows from https://css-tricks.com/snippets/css/css-triangle/ */
+    .arrowTable {
+      border-collapse:separate;
+      border-spacing:2px;
+      border:0;
+      padding:0;
+      display:inline-block;
+      height:15px; /* works nicely with header text height */
+    }
+    .arrowTable td {
+      width: 0; 
+      height: 0; 
+      padding: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+    }
+    .up-gray {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid lightgray;
+    }
+    .down-gray {
+      border-top: 4px solid lightgray;
+      border-bottom: 4px solid transparent;
+    }
+    .up-black {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid black;
+    }
+    .down-black {
+      border-top: 4px solid black;
+      border-bottom: 4px solid transparent;
+    }
+    .up-off {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+    }
+    .down-off {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+    }
   </style>
-  <script src="https://js.pusher.com/7.0/pusher.min.js"></script>
+  <!-- <script src="https://js.pusher.com/7.0/pusher.min.js"></script> --> 
+</head>
+<body>
   <script>
 
-    // Enable pusher logging - don't include this in production
-    Pusher.logToConsole = true;
+    // // Enable pusher logging - don't include this in production
+    // Pusher.logToConsole = true;
 
-    var pusher = new Pusher('7330e066036560fc808c', {
-      cluster: 'us3'
-    });
+    // var pusher = new Pusher('7330e066036560fc808c', {
+    //   cluster: 'us3'
+    // });
 
-    var channel = pusher.subscribe('my-channel');
-    channel.bind('teamsViewUpdate', function(data) {
-         var pusherDisplay = document.getElementById('teamsDiv');
-         pusherDisplay.innerHTML = data;	
-    });
-    channel.bind('assignmentsViewUpdate', function(data) {
-         var pusherDisplay = document.getElementById('assignmentsDiv');
-         pusherDisplay.innerHTML = data;	
-    });
-    channel.bind('countsUpdate', function(data) {
-        // alert(JSON.stringify(data));
-         var teamsCount = document.getElementById('teamsCount');
-         var assignmentsCount = document.getElementById('assignmentsCount');
-        //  const obj=JSON.parse(data);
-         teamsCount.innerHTML = data.teams;
-         assignmentsCount.innerHTML = data.assignments;	
-    });
+    // var channel = pusher.subscribe('my-channel');
+    // channel.bind('teamsViewUpdate', function(data) {
+    //      var pusherDisplay = document.getElementById('teamsDiv');
+    //      pusherDisplay.innerHTML = data;	
+    // });
+    // channel.bind('assignmentsViewUpdate', function(data) {
+    //      var pusherDisplay = document.getElementById('assignmentsDiv');
+    //      pusherDisplay.innerHTML = data;	
+    // });
+    // channel.bind('countsUpdate', function(data) {
+    //     // alert(JSON.stringify(data));
+    //      var teamsCount = document.getElementById('teamsCount');
+    //      var assignmentsCount = document.getElementById('assignmentsCount');
+    //     //  const obj=JSON.parse(data);
+    //      teamsCount.innerHTML = data.teams;
+    //      assignmentsCount.innerHTML = data.assignments;	
+    // });
+
+    var url="ws://127.0.0.1:8765/";
+    var ws = new WebSocket(url);
+    ws.onmessage=wsHandleEvent;
+
+    function getURL() {
+      var urlNew=prompt("WebSocket URL:",url)
+      if (urlNew===null) {
+        urlNew=url;
+      }
+      url=urlNew;
+      ws.close();
+      ws=new WebSocket(url);
+      ws.onmessage=wsHandleEvent;
+    }
+
+    function wsHandleEvent (event) {
+      // alert('MSG received!');
+      var teamsDiv = document.getElementById('teamsDiv');
+      var d=JSON.parse(event.data);
+      var msg=JSON.parse(d.msg);
+      createTable([['Team',52.4],['Asgmt.',62.8],['Status',129.2],['Resource',118],['Prev.',60]],msg.teamsView,teamsDiv);
+      createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsView,assignmentsDiv);
+      teamsCount.innerText=msg.teamsCount;
+      assignmentsCount.innerText=msg.assignmentsCount;
+    };
+
+    var colorMap={
+          'UNASSIGNED': '#cfc',
+          'ASSIGNED': '#fff',
+          'WORKING': '#fff',
+          'ENROUTE TO IC': '#fcc',
+          'DEBRIEFING': '#ccf'};
+    
+    var teamsSortCol=0;
+    var teamsSortDir='asc';
+    var assignmentsSortCol=0;
+    var assignmentsSortDir='asc';
+
+    // from https://stackoverflow.com/a/15164958
+    function createTable(columnData,tableData,container) {
+      var table = document.createElement('table');
+      var id=container.id+'Table';
+      table.id=id;
+      // show the table now, so that it is defined before the
+      //  sort callback is called the first time
+      container.replaceChild(table,container.childNodes[0]);
+      var header = document.createElement('thead');
+      var colNum=0;
+      var name="";
+      columnData.forEach(function(col) {
+        var th=document.createElement('th');
+        if (Array.isArray(col)) {
+          name=col[0];
+          th.style.width=col[1]+'px';
+          th.style.minWidth=col[1]+'px';
+          th.style.maxWidth=col[1]+'px';
+        } else {
+          name=col;
+        }
+        th.innerHTML="<span>"+name+"&nbsp;<table class='arrowTable'><tr><td id='"+id+"-up"+colNum+"' class='up-gray'><tr><td id='"+id+"-down"+colNum+"' class='down-gray'></table>"
+        // the following syntax is needed to pass variable arguments
+        //  to the onclick callback
+        // https://stackoverflow.com/a/3495722/3577105
+        th.onclick=(function() {
+          var c=colNum;
+          var i=id;
+          return function() {
+            var d; // sort direction
+            if(container.id=='teamsDiv') {
+              d=teamsSortDir;
+            } else {
+              d=assignmentsSortDir;
+            }
+            // when clicked, sort in the opposite direction to the current sort
+            if (d=='asc') {
+              d='desc';
+            } else {
+              d='asc';
+            }
+            sortTable(i,c,d);
+          }})();
+        header.appendChild(th);
+        colNum++;
+      });
+      table.appendChild(header);
+      var tableBody = document.createElement('tbody');
+      // color mapping from https://dev.to/k_penguin_sato/use-lookup-tables-for-cleaning-up-your-js-ts-code-9gk
+      const statusToColor=(status)=>colorMap[status]||"gray";
+      tableData.forEach(function(rowData) {
+        var status=rowData[2]; // same index for team table and assignment table
+        var row = document.createElement('tr');
+        row.style.backgroundColor=statusToColor(status);
+        rowData.forEach(function(cellData) {
+          var cell = document.createElement('td');
+          cell.appendChild(document.createTextNode(cellData));
+          row.appendChild(cell);
+        });
+        tableBody.appendChild(row);
+      });
+      table.appendChild(tableBody);
+
+      // sort the table immediately, using the previous sort column and direction
+      var sc,sd; // sort column and sort direction
+      if(id=='teamsDivTable') {
+        sc=teamsSortCol;
+        sd=teamsSortDir;
+      } else {
+        sc=assignmentsSortCol;
+        sd=assignmentsSortDir;
+      }
+      sortTable(id,sc,sd);
+    }
 
     function showTeamsView(){
-      // document.getElementById("TeamsButtonHeader").style.fontSize="20pt";
-      // document.getElementById("AssignmentsButtonHeader").style.fontSize="10pt";
       document.getElementById("teamsDiv").style.visibility='visible';
       document.getElementById("assignmentsDiv").style.visibility='hidden';
       document.getElementById("TeamsButtonHeader").className='big';
@@ -83,16 +248,91 @@
     }
     
     function showAssignmentsView(){
-      // document.getElementById("TeamsButtonHeader").style.fontSize="10pt";
-      // document.getElementById("AssignmentsButtonHeader").style.fontSize="20pt";
       document.getElementById("teamsDiv").style.visibility='hidden';
       document.getElementById("assignmentsDiv").style.visibility='visible';
       document.getElementById("TeamsButtonHeader").className='small';
       document.getElementById("AssignmentsButtonHeader").className='big';
     }
+    
+    // multi-column click-sorting from
+    //  https://www.w3schools.com/howto/howto_js_sort_table.asp
+    function sortTable(tableID,n,dir) {
+      var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+      table = document.getElementById(tableID);
+      switching = true;
+      /* Make a loop that will continue until
+      no switching has been done: */
+      while (switching) {
+        // Start by saying: no switching is done:
+        switching = false;
+        rows = table.rows;
+        // Loop through all table rows
+        for (i = 0; i < (rows.length - 1); i++) {
+          // Start by saying there should be no switching:
+          shouldSwitch = false;
+          /* Get the two elements you want to compare,
+          one from current row and one from the next: */
+          x = rows[i].getElementsByTagName("TD")[n];
+          y = rows[i + 1].getElementsByTagName("TD")[n];
+          /* Check if the two rows should switch place,
+          based on the direction, asc or desc: */
+          if (dir == "asc") {
+            if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+              // If so, mark as a switch and break the loop:
+              shouldSwitch = true;
+              break;
+            }
+          } else if (dir == "desc") {
+            if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+              // If so, mark as a switch and break the loop:
+              shouldSwitch = true;
+              break;
+            }
+          }
+        }
+        if (shouldSwitch) {
+          /* If a switch has been marked, make the switch
+          and mark that a switch has been done: */
+          rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+          switching = true;
+          // Each time a switch is done, increase this count by 1:
+          switchcount ++;
+        }
+      }
+
+      // reset all arrows in the displayed table to gray
+      els=table.getElementsByClassName("up-black");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="up-gray";});
+      els=table.getElementsByClassName("up-off");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="up-gray";});
+      els=table.getElementsByClassName("down-black");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="down-gray";});
+      els=table.getElementsByClassName("down-off");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="down-gray";});
+
+      // change appropriate arrow to black, and opposite arrow to transparent
+      if (dir == 'asc') {
+        document.getElementById(tableID+'-up'+n).className="up-black";
+        document.getElementById(tableID+'-down'+n).className="down-off";
+      } else {
+        document.getElementById(tableID+'-up'+n).className="up-off";
+        document.getElementById(tableID+'-down'+n).className="down-black";
+      }
+
+      // remember the sort column and direction
+      if (tableID=='teamsDivTable') {
+        teamsSortCol=n;
+        teamsSortDir=dir;
+      } else {
+        assignmentsSortCol=n;
+        assignmentsSortDir=dir;
+      }
+    }
   </script>
-</head>
-<body>
   <div id="buttonsDiv">
     <button type="button" onclick="showTeamsView()">
       <div id="TeamsButtonHeader">Teams</div>
@@ -102,6 +342,7 @@
       <div id="AssignmentsButtonHeader">Assignments</div>
       <span id="assignmentsCount" font-size:8px;>Assigned: 3&nbspUnassigned: 3</span>
     </button>
+    <input type="button" value="options" onclick="getURL();">
   </div>
   <div id='tablesDiv'>
     <div id = 'teamsDiv'>Your result will display here</div>
