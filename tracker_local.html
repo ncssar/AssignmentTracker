@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <head>
-  <title>Pusher Test</title>
+  <title>Assignment Tracker</title>
   <style>
     h1 {
       font-family: "Segoe UI",Arial,sans-serif;
@@ -19,6 +19,10 @@
       border-collapse: collapse;
       padding: 5px;
       text-align: center;
+      font-size:16px;
+    }
+    th {
+      font-size:12px;
     }
     #buttonsDiv {
       height:50px;
@@ -44,29 +48,45 @@
       margin:0px;
       margin-top:9px; /* not sure why but this prevents the button from shifting up */
     }
-    .nosort {
-      background-color: white;
-    }
-    .sortasc {
-      background-color: blue;
-    }
-    .sortdesc {
-      background-color: red;
-    }
     /* CSS arrows from https://css-tricks.com/snippets/css/css-triangle/ */
-    .arrow-up {
-      width: 0; 
-      height: 0; 
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-bottom: 5px solid black;
+    .arrowTable {
+      border-collapse:separate;
+      border-spacing:2px;
+      border:0;
+      padding:0;
+      display:inline-block;
+      height:15px; /* works nicely with header text height */
     }
-    .arrow-down {
+    .arrowTable td {
       width: 0; 
       height: 0; 
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-top: 5px solid black;
+      padding: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+    }
+    .up-gray {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid lightgray;
+    }
+    .down-gray {
+      border-top: 4px solid lightgray;
+      border-bottom: 4px solid transparent;
+    }
+    .up-black {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid black;
+    }
+    .down-black {
+      border-top: 4px solid black;
+      border-bottom: 4px solid transparent;
+    }
+    .up-off {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+    }
+    .down-off {
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
     }
   </style>
   <!-- <script src="https://js.pusher.com/7.0/pusher.min.js"></script> --> 
@@ -105,8 +125,8 @@
       var teamsDiv = document.getElementById('teamsDiv');
       var d=JSON.parse(event.data);
       var msg=JSON.parse(d.msg);
-      createTable(['Team','Assignment','Status','Resource','Previous'],msg.teamsView,teamsDiv);
-      createTable(['Assignment','Team','Status','Resource'],msg.assignmentsView,assignmentsDiv);
+      createTable(['Team','Asgmt.','Status','Resource','Previous'],msg.teamsView,teamsDiv);
+      createTable(['Asgmt.','Team','Status','Resource'],msg.assignmentsView,assignmentsDiv);
       teamsCount.innerText=msg.teamsCount;
       assignmentsCount.innerText=msg.assignmentsCount;
     };
@@ -123,7 +143,10 @@
       var colNum=0;
       columnNames.forEach(function(name) {
         var th=document.createElement('th');
-        th.appendChild(document.createTextNode(name));
+        // th.appendChild(document.createTextNode(name));
+        // th.innerHTML=name+"&nbsp;<table><tr><td class='arrow-up'><tr><td class='arrow-down'></table>"
+        // th.innerHTML=name+"&nbsp;<table class='arrowTable'><tr><td id='up' class='arrow up-gray'><tr><td id='down' class='arrow down-gray'></table>"
+        th.innerHTML="<span>"+name+"&nbsp;<table class='arrowTable'><tr><td id='"+id+"-up"+colNum+"' class='up-gray'><tr><td id='"+id+"-down"+colNum+"' class='down-gray'></table>"
         // the following syntax is needed to pass variable arguments
         //  to the onclick callback
         // https://stackoverflow.com/a/3495722/3577105
@@ -233,13 +256,28 @@
           }
         }
       }
-      var headerCells=table.getElementsByTagName('thead')[0].childNodes;
-      headerCells.forEach(function(headerCell) {
-          headerCell.className="nosort";});
+
+      // reset all arrows to gray
+      els=document.getElementsByClassName("up-black");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="up-gray";});
+      els=document.getElementsByClassName("up-off");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="up-gray";});
+      els=document.getElementsByClassName("down-black");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="down-gray";});
+      els=document.getElementsByClassName("down-off");
+      Array.prototype.forEach.call(els,function(el) {
+        el.className="down-gray";});
+
+      // change appropriate arrow to black, and opposite arrow to transparent
       if (dir == 'asc') {
-        headerCells[n].className=".arrow-up";
+        document.getElementById(tableID+'-up'+n).className="up-black";
+        document.getElementById(tableID+'-down'+n).className="down-off";
       } else {
-        headerCells[n].className=".arrow-down";
+        document.getElementById(tableID+'-up'+n).className="up-off";
+        document.getElementById(tableID+'-down'+n).className="down-black";
       }
     }
   </script>
