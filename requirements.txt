@@ -1,0 +1,12 @@
+# AssignmentTracker requirements.txt
+# usage: 'pip install -r requirements.txt'
+
+kivy
+docutils
+pygments
+pypiwin32
+kivy_deps.sdl2
+kivy_deps.glew
+certifi
+websocket-client
+websockets

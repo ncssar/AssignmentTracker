@@ -45,7 +45,7 @@ from functools import partial
 import urllib.parse
 import certifi # attempt to fix SSL shared-token problem on Android
 # from plyer import wifi
-import pusher
+# import pusher
 
 # # database interface module shared by this app and the assignmentTracker_api
 from assignmentTracker_db import *
@@ -168,24 +168,24 @@ class assignmentTrackerApp(App):
         self.assignedAssignmentsCount=0
         self.unassignedAssignmentsCount=0
 
-        tdbInit()
+        tdbInit(wsUrl="ws://127.0.0.1:8765")
         # cloudInit()
 
-        self.pusher_appid=None
-        self.pusher_key=None
-        self.pusher_secret=None
-        self.pusher_cluster=None
-        self.pusher_appid=os.getenv('TRACKER_PUSHER_APPID')
-        self.pusher_key=os.getenv('TRACKER_PUSHER_KEY')
-        self.pusher_secret=os.getenv('TRACKER_PUSHER_SECRET')
-        self.pusher_cluster=os.getenv('TRACKER_PUSHER_CLUSTER')
+        # self.pusher_appid=None
+        # self.pusher_key=None
+        # self.pusher_secret=None
+        # self.pusher_cluster=None
+        # self.pusher_appid=os.getenv('TRACKER_PUSHER_APPID')
+        # self.pusher_key=os.getenv('TRACKER_PUSHER_KEY')
+        # self.pusher_secret=os.getenv('TRACKER_PUSHER_SECRET')
+        # self.pusher_cluster=os.getenv('TRACKER_PUSHER_CLUSTER')
 
-        self.pusher_client = pusher.Pusher(
-            app_id=self.pusher_appid,
-            key=self.pusher_key,
-            secret=self.pusher_secret,
-            cluster=self.pusher_cluster,
-            ssl=True)
+        # self.pusher_client = pusher.Pusher(
+        #     app_id=self.pusher_appid,
+        #     key=self.pusher_key,
+        #     secret=self.pusher_secret,
+        #     cluster=self.pusher_cluster,
+        #     ssl=True)
 
 
         # some hardcoded initial data for development
@@ -317,7 +317,7 @@ class assignmentTrackerApp(App):
         self.teamsList=tdbGetTeamsView()
         self.assignmentsList=tdbGetAssignmentsView()
         self.updateCounts()
-        tdbPushTables('ws://localhost:8765',self.teamsList,self.assignmentsList,self.teamsCountText,self.assignmentsCountText)
+        tdbPushTables(self.teamsList,self.assignmentsList,self.teamsCountText,self.assignmentsCountText)
 
     # def pushAssignmentsTable(self):
     #     cols=["Assignment","Team","Status","Resource"]

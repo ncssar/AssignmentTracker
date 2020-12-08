@@ -59,6 +59,10 @@ HISTORY_COLS=[
 
 TEAM_STATUSES=["UNASSIGNED","ASSIGNED","WORKING","ENROUTE TO IC","DEBRIEFING"]
 
+# websockets default values; url must be passed in as argument to tdbInit
+url=""
+wsOk=False
+
 # needed to make query return values dictionaries instead of lists of tuples
 def dict_factory(cursor, row):
     d = {}
@@ -84,10 +88,23 @@ def q(query,params=None):
     print("  result:" +str(r))
     return r
 
-def wsSend(uri,msg):
-    ws=create_connection(uri)
-    ws.send(json.dumps({"msg":msg}))
-    ws.close()
+def wsCheck(url):
+    try:
+        ws=create_connection(url,1) # 1 second timeout
+    except:
+        return False
+    else:
+        ws.close()
+        return True
+
+def wsSend(url,msg):
+    try:
+        ws=create_connection(url,1) # 1 second timeout
+        ws.send(json.dumps({"msg":msg}))
+        ws.close()
+        print("websocket send to "+url+" successful\n")
+    except:
+        print("websocket send to "+url+" failed\n")
 
 def createTeamsTableIfNeeded():
     colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -113,7 +130,7 @@ def createHistoryTableIfNeeded():
     query='CREATE TABLE IF NOT EXISTS "History" ('+colString+');'
     return q(query)
 
-def tdbInit():
+def tdbInit(wsUrl=None):
     # start with a clean database every time the app is started
     #  (need to implement auto-recover)
     if os.path.exists('tracker.db'):
@@ -122,6 +139,14 @@ def tdbInit():
     createAssignmentsTableIfNeeded()
     createPairingsTableIfNeeded()
     createHistoryTableIfNeeded()
+    if wsUrl:
+        if not wsUrl.startswith('ws://'):
+            wsUrl="ws://"+wsUrl
+        global wsOk
+        global url
+        wsOk=wsCheck(wsUrl)
+        url=wsUrl
+    print("wsCheck "+url+" : "+str(wsOk))
 
 # intercept any None values and change them to NULL
 # def noneToQuestion(x):
@@ -275,17 +300,19 @@ def tdbGetTeamsView():
     print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
     return teamsList
 
-def tdbPushTables(uri,teamsViewList=None,assignmentsViewList=None,teamsCountText="---",assignmentsCountText="---"):
-    # uri = "ws://localhost:8765"
+def tdbPushTables(teamsViewList=None,assignmentsViewList=None,teamsCountText="---",assignmentsCountText="---"):
+    # url = "ws://localhost:8765"
     if not teamsViewList:
         teamsViewList=tdbGetTeamsView()
     if not assignmentsViewList:
         assignmentsViewList=tdbGetAssignmentsView()
-    if uri=='pusher':
-        pusher_client.trigger('my-channel','teamsViewUpdate',teamsViewList)
-        pusher_client.trigger('my-channel','assignmentsViewUpdate',teamsViewList)
+    if url=='pusher':
+        # pusher_client.trigger('my-channel','teamsViewUpdate',teamsViewList)
+        # pusher_client.trigger('my-channel','assignmentsViewUpdate',teamsViewList)
+        pass
     else:
-        wsSend(uri,json.dumps({
+        if wsOk:
+            wsSend(url,json.dumps({
                 "teamsView":teamsViewList,
                 "assignmentsView":assignmentsViewList,
                 "teamsCount":teamsCountText,
