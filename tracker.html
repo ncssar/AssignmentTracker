@@ -97,44 +97,42 @@
       border-bottom: 4px solid transparent;
     }
   </style>
-  <!-- <script src="https://js.pusher.com/7.0/pusher.min.js"></script> --> 
+  <script src="https://js.pusher.com/7.0/pusher.min.js"></script> 
+  <script src="file:\\C:/tracker_config.js"></script>
 </head>
 <body>
   <script>
+    // Enable pusher logging - don't include this in production
+    try {
+      Pusher.logToConsole = true;
 
-    // // Enable pusher logging - don't include this in production
-    // Pusher.logToConsole = true;
-
-    // var pusher = new Pusher('7330e066036560fc808c', {
-    //   cluster: 'us3'
-    // });
-
-    // var channel = pusher.subscribe('my-channel');
-    // channel.bind('teamsViewUpdate', function(data) {
-    //      var pusherDisplay = document.getElementById('teamsDiv');
-    //      pusherDisplay.innerHTML = data;	
-    // });
-    // channel.bind('assignmentsViewUpdate', function(data) {
-    //      var pusherDisplay = document.getElementById('assignmentsDiv');
-    //      pusherDisplay.innerHTML = data;	
-    // });
-    // channel.bind('countsUpdate', function(data) {
-    //     // alert(JSON.stringify(data));
-    //      var teamsCount = document.getElementById('teamsCount');
-    //      var assignmentsCount = document.getElementById('assignmentsCount');
-    //     //  const obj=JSON.parse(data);
-    //      teamsCount.innerHTML = data.teams;
-    //      assignmentsCount.innerHTML = data.assignments;	
-    // });
+      var pusher = new Pusher(TRACKER_PUSHER_KEY, {
+        cluster: TRACKER_PUSHER_CLUSTER
+      });
+      var channel = pusher.subscribe('my-channel');
+      channel.bind('my-event', function(data) {
+        wsHandleEvent({'data':JSON.stringify(data)});
+      });
+    }
+    catch(err) {
+      alert('Pusher is not enabled.');
+    }
 
     var url="ws://127.0.0.1:8765/";
-    var ws = new WebSocket(url);
-    ws.onmessage=wsHandleEvent;
+    var ws;
+
+    try {
+      ws = new WebSocket(url);
+      ws.onmessage=wsHandleEvent;
+    }
+    catch(err) {
+      alert('websockets not available');
+    }
 
     function getURL() {
       var urlNew=prompt("WebSocket URL:",url)
       if (urlNew===null) {
-        urlNew=url;
+        return;
       }
       url=urlNew;
       ws.close();
@@ -143,7 +141,6 @@
     }
 
     function wsHandleEvent (event) {
-      // alert('MSG received!');
       var teamsDiv = document.getElementById('teamsDiv');
       var d=JSON.parse(event.data);
       var msg=JSON.parse(d.msg);
