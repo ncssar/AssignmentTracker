@@ -111,6 +111,7 @@
       });
       var channel = pusher.subscribe('my-channel');
       channel.bind('my-event', function(data) {
+        wsFlashIcon('www');
         wsHandleEvent({'data':JSON.stringify(data)});
       });
     }
@@ -118,26 +119,39 @@
       alert('Pusher is not enabled.');
     }
 
-    var url="ws://127.0.0.1:8765/";
     var ws;
+    // var url=wsLocalhostURL;
 
+    // alert("trying localhost websocket "+wsLocalhostURL);
     try {
-      ws = new WebSocket(url);
-      ws.onmessage=wsHandleEvent;
+      wsLocalhost = new WebSocket(wsLocalhostURL);
+      wsLocalhost.onmessage=function(event) {
+        wsFlashIcon('localhost');
+        wsHandleEvent(event);
+      };
     }
     catch(err) {
-      alert('websockets not available');
+      alert('localhost websocket not available');
     }
 
-    function getURL() {
-      var urlNew=prompt("WebSocket URL:",url)
-      if (urlNew===null) {
-        return;
-      }
-      url=urlNew;
-      ws.close();
-      ws=new WebSocket(url);
-      ws.onmessage=wsHandleEvent;
+    // alert("trying LAN websocket "+wsLANURL);
+    try {
+      wsLAN = new WebSocket(wsLANURL);
+      wsLAN.onmessage=function(event) { 
+        wsFlashIcon('lan');
+        wsHandleEvent(event);
+      };
+    }
+    catch(err) {
+      alert('LAN websocket not available');
+    }
+
+    function wsFlashIcon(iconName) {
+      var i=document.getElementById('wsIcon');
+      i.innerHTML='<img src="./img/'+iconName+'.png">';
+      setTimeout(function() {
+        i.innerHTML='<img src="./img/'+iconName+'_faded.png">';
+      },500);
     }
 
     function wsHandleEvent (event) {
@@ -339,7 +353,7 @@
       <div id="AssignmentsButtonHeader">Assignments</div>
       <span id="assignmentsCount" font-size:8px;>Assigned: 3&nbspUnassigned: 3</span>
     </button>
-    <input type="button" value="options" onclick="getURL();">
+    <span id="wsIcon"></span>
   </div>
   <div id='tablesDiv'>
     <div id = 'teamsDiv'>Your result will display here</div>
