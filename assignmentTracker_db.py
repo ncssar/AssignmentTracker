@@ -23,6 +23,7 @@ import sqlite3
 import json
 import time
 import os
+import re
 from websocket import create_connection # not websockets; websocket (singular) allows simple synchronous send
 
 # use one table for teams, one table for assignments, and reduce duplication of data;
@@ -59,9 +60,33 @@ HISTORY_COLS=[
 
 TEAM_STATUSES=["UNASSIGNED","ASSIGNED","WORKING","ENROUTE TO IC","DEBRIEFING"]
 
-# websockets default values; url must be passed in as argument to tdbInit
+# websockets default values
 url=""
 wsOk=False
+
+# pythonanywhere.com does not provide the websockets module, so, it cannot
+#  act as the websockets repeater.  Intranet or localhost can run the
+#  websockets repeater server.  If this code is running on pythonanywhere,
+#  use pusher to send websockets instead.  (Pythonanywhere might be able
+#  to send synchronous websockets using the 'websocket' module, but, we
+#  would not have an actual URL of a repeater to send to.)
+
+# Web (http) servers could be running on pythonanywhere, on a LAN server, and/or
+#  on localhost.
+# No individual web server will know, when it starts, what other web server(s)
+#  are in use.  Only one web server should send websockets (by whatever method).
+#  Only the first client to start will know which http server should send websockets.
+
+wsUseURL=True # use URL for websockets by default
+if 'PYTHONANYWHERE_DOMAIN' in os.environ:
+    wsUseURL=False # use pusher.com instead
+    import pusher
+    pusher_client = pusher.Pusher(
+        app_id = os.getenv('TRACKER_PUSHER_APPID'),
+        key = os.getenv('TRACKER_PUSHER_KEY'),
+        secret = os.getenv('TRACKER_PUSHER_SECRET'),
+        cluster = os.getenv('TRACKER_PUSHER_CLUSTER'),
+        ssl=True)
 
 # needed to make query return values dictionaries instead of lists of tuples
 def dict_factory(cursor, row):
@@ -74,7 +99,7 @@ def dict_factory(cursor, row):
 #  they are kept separate by the fact that only one separate instance of this code
 #  is running on each machine involved (one on each server, one on each client)
 def q(query,params=None):
-    print("q called: "+query)
+    # print("q called: "+query)
     conn = sqlite3.connect('tracker.db')
     conn.row_factory = dict_factory # so that return value is a dict instead of tuples
     cur = conn.cursor()
@@ -85,26 +110,38 @@ def q(query,params=None):
     else:
         r=cur.execute(query).fetchall()
     conn.commit()
-    print("  result:" +str(r))
+    # print("  result:" +str(r))
     return r
 
 def wsCheck(url):
-    try:
-        ws=create_connection(url,1) # 1 second timeout
-    except:
-        return False
+    if wsUseURL:
+        try:
+            ws=create_connection(url,1) # 1 second timeout
+        except:
+            return False
+        else:
+            ws.close()
+            return True
     else:
-        ws.close()
         return True
 
-def wsSend(url,msg):
-    try:
-        ws=create_connection(url,1) # 1 second timeout
-        ws.send(json.dumps({"msg":msg}))
-        ws.close()
-        print("websocket send to "+url+" successful\n")
-    except:
-        print("websocket send to "+url+" failed\n")
+def wsSend(msg,wsUrl=None):
+    wsUrl=wsUrl or url # use the global url normally
+    # print("sending - wsUseURL="+str(wsUseURL))
+    if wsUseURL:
+        try:
+            ws=create_connection(wsUrl,1) # 1 second timeout
+            ws.send(json.dumps({'msg':msg}))
+            ws.close()
+            print("websocket send to "+wsUrl+" successful")
+        except:
+            print("websocket send to "+wsUrl+" failed")
+    else: # use pusher.com
+        try:
+            pusher_client.trigger('my-channel', 'my-event', {'msg': msg})
+            print("pusher send successful")
+        except Exception as e:
+            print("pusher send failed: "+str(e))
 
 def createTeamsTableIfNeeded():
     colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -130,50 +167,26 @@ def createHistoryTableIfNeeded():
     query='CREATE TABLE IF NOT EXISTS "History" ('+colString+');'
     return q(query)
 
-def tdbInit(wsUrl=None):
-    # start with a clean database every time the app is started
-    #  (need to implement auto-recover)
+# tdbInit will only be called once, when the first node joins
+def tdbInit(server=None):
+    print('tdbInit called: server='+str(server))
     if os.path.exists('tracker.db'):
         os.remove('tracker.db')
     createTeamsTableIfNeeded()
     createAssignmentsTableIfNeeded()
     createPairingsTableIfNeeded()
     createHistoryTableIfNeeded()
-    if wsUrl:
-        if not wsUrl.startswith('ws://'):
-            wsUrl="ws://"+wsUrl
+    if server:
+        wsUrl='ws://'+re.sub(':.*$','',server)+':80'
         global wsOk
         global url
         wsOk=wsCheck(wsUrl)
         url=wsUrl
-    print("wsCheck "+url+" : "+str(wsOk))
-
-# intercept any None values and change them to NULL
-# def noneToQuestion(x):
-#     if x is None:
-#         return 'NULL'
-#     else:
-#         return x
-    
-# def qInsert(tableName,d):
-#     print("qInsert called: tableName="+str(tableName)+"  d="+str(d))
-#     colList="({columns})".format(
-#                 columns=', '.join(d.keys()))
-# #     values=list(map(noneToNull,d.values()))
-#     values=list(d.values())
-#     print("  mapped values="+str(values))
-#     valList="{values}".format(
-#                 values=tuple(values))
-#     
-#     query="INSERT INTO '{tablename}' {colList} VALUES {valList};".format(
-#         tablename=tableName,
-#         colList=colList,
-#         valList=valList)
-#     return q(query)
+        print("wsCheck "+url+" : "+str(wsOk))
 
 # insert using db parameters to avoid SQL injection attack and to correctly handle None
 def qInsert(tableName,d):
-    print("qInsert called: tableName="+str(tableName)+"  d="+str(d))
+    # print("qInsert called: tableName="+str(tableName)+"  d="+str(d))
     colList="({columns})".format(
             columns=', '.join(d.keys()))
     valList="({columns})".format(
@@ -214,6 +227,7 @@ def tdbNewTeam(name,resource):
     tdbAddHistoryEntry("Team "+name+" Created",teamID=r[0]["TeamID"],recordedBy='SYSTEM')
     validate=r[0]
     # wsSend(json.dumps(validate))
+    tdbPushTables()
     return {'validate':validate}
 
 def tdbNewAssignment(name,intendedResource):
@@ -222,6 +236,7 @@ def tdbNewAssignment(name,intendedResource):
     r=q('SELECT * FROM Assignments ORDER BY AssignmentID DESC LIMIT 1;')
     tdbAddHistoryEntry("Assignment "+name+" Created",assignmentID=r[0]["AssignmentID"],recordedBy='SYSTEM')
     validate=r[0]
+    tdbPushTables()
     return {'validate':validate}
 
 # tdbHome - return a welcome message to verify that this code is running
@@ -232,38 +247,86 @@ def tdbHome():
 
 # team getters
 def tdbGetTeamIDByName(teamName):
-    query="SELECT TeamID FROM Teams WHERE TeamName='"+str(teamName)+"';"
-    return q(query)[0].get("TeamID",None)
+    query="SELECT TeamID FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("TeamID",None)
+    else:
+        return None
 
 def tdbGetTeamNameByID(teamID):
-    query="SELECT TeamName FROM Teams WHERE TeamID='"+str(teamID)+"';"
-    return q(query)[0].get("TeamName",None)
+    query="SELECT TeamName FROM 'Teams' WHERE TeamID='"+str(teamID)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("TeamName",None)
+    else:
+        return None
 
 def tdbGetTeamStatusByName(teamName):
-    query="SELECT TeamStatus FROM Teams WHERE TeamName='"+str(teamName)+"';"
-    return q(query)[0].get("TeamStatus",None)
+    query="SELECT TeamStatus FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("TeamStatus",None)
+    else:
+        return None
 
 def tdbGetTeamResourceByName(teamName):
-    query="SELECT Resource FROM Teams WHERE TeamName='"+str(teamName)+"';"
-    return q(query)[0].get("Resource",None)
+    query="SELECT Resource FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("Resource",None)
+    else:
+        return None
 
 
 # assignment getters
 def tdbGetAssignmentNameByID(assignmentID):
-    query="SELECT AssignmentName FROM Assignments WHERE AssignmentID='"+str(assignmentID)+"';"
-    return q(query)[0].get("AssignmentName",None)
+    query="SELECT AssignmentName FROM 'Assignments' WHERE AssignmentID='"+str(assignmentID)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("AssignmentName",None)
+    else:
+        return None
 
 def tdbGetAssignmentIDByName(assignmentName):
-    query="SELECT AssignmentID FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"
-    return q(query)[0].get("AssignmentID",None)
+    query="SELECT AssignmentID FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("AssignmentID",None)
+    else:
+        return None
 
 def tdbGetAssignmentStatusByName(assignmentName):
-    query="SELECT AssignmentStatus FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"
-    return q(query)[0].get("AssignmentStatus",None)
+    query="SELECT AssignmentStatus FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("AssignmentStatus",None)
+    else:
+        return None
 
 def tdbGetAssignmentIntendedResourceByName(assignmentName):
-    query="SELECT IntendedResource FROM Assignments WHERE AssignmentName='"+str(assignmentName)+"';"
-    return q(query)[0].get("IntendedResource",None)
+    query="SELECT IntendedResource FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("IntendedResource",None)
+    else:
+        return None
 
 
 def tdbGetTeams(teamID=None):
@@ -279,7 +342,7 @@ def tdbGetTeams(teamID=None):
 #    to create the teams view RecycleView data, or, to generate the html table
 #    for downstream html views i.e. pushed using websockets
 def tdbGetTeamsView():
-    print('****************** tdbGetTeamsView called')
+    # print('****************** tdbGetTeamsView called')
     teamsList=[]
     tdbTeams=tdbGetTeams()
     tdbPairings=tdbGetPairings()
@@ -297,26 +360,27 @@ def tdbGetTeamsView():
             entry['TeamStatus'],
             entry['Resource'],
             ','.join(previousAssignments) or '--'])
-    print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
+    # print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
     return teamsList
 
-def tdbPushTables(teamsViewList=None,assignmentsViewList=None,teamsCountText="---",assignmentsCountText="---"):
-    # url = "ws://localhost:8765"
+def tdbPushTables(teamsViewList=None,assignmentsViewList=None,teamsCountText=None,assignmentsCountText=None):
     if not teamsViewList:
         teamsViewList=tdbGetTeamsView()
     if not assignmentsViewList:
         assignmentsViewList=tdbGetAssignmentsView()
-    if url=='pusher':
-        # pusher_client.trigger('my-channel','teamsViewUpdate',teamsViewList)
-        # pusher_client.trigger('my-channel','assignmentsViewUpdate',teamsViewList)
-        pass
-    else:
-        if wsOk:
-            wsSend(url,json.dumps({
-                "teamsView":teamsViewList,
-                "assignmentsView":assignmentsViewList,
-                "teamsCount":teamsCountText,
-                "assignmentsCount":assignmentsCountText}))
+    if not teamsCountText:
+        unassignedTeamsCount=len([x for x in teamsViewList if x[2]=='UNASSIGNED'])
+        assignedTeamsCount=len(teamsViewList)-unassignedTeamsCount
+        teamsCountText=str(assignedTeamsCount)+' Assigned / '+str(unassignedTeamsCount)+' Unassigned'
+        unassignedAssignmentsCount=len([x for x in assignmentsViewList if x[2]=='UNASSIGNED'])
+        assignedAssignmentsCount=len(assignmentsViewList)-unassignedAssignmentsCount
+        assignmentsCountText=str(assignedAssignmentsCount)+' Assigned / '+str(unassignedAssignmentsCount)+' Unassigned'
+    if wsOk: # wsSend will send over URL or over pusher.com as appropriate
+        wsSend(json.dumps({
+            "teamsView":teamsViewList,
+            "assignmentsView":assignmentsViewList,
+            "teamsCount":teamsCountText,
+            "assignmentsCount":assignmentsCountText}))
 
     # def pushTeamsTable(self):
     #     # no-module table writer based on https://stackoverflow.com/a/49889528
@@ -338,7 +402,7 @@ def tdbGetAssignments(assignmentID=None):
 
 def tdbGetAssignmentsView():
     # note that this is really a list of pairings (one pairing per row)
-    print('******************** tdbGetAssignmentsView called')
+    # print('******************** tdbGetAssignmentsView called')
     assignmentsList=[]
     previousAssignments=[]
     tdbAssignments=tdbGetAssignments()
@@ -387,55 +451,83 @@ def tdbGetPairingIDByNames(assignmentName,teamName):
     return q(query)[0].get('PairingID',None)
 
 def tdbSetPairingStatusByID(pairingID,status):
+    if status=='PREVIOUS': # set team and assignment statuses but don't push tables yet
+        pairing=tdbGetPairings(pairingID)[0]
+        teamID=pairing.get("TeamID",None)
+        assignmentID=pairing.get("AssignmentID",None)
+        tdbSetTeamStatusByID(teamID,'UNASSIGNED',push=False)
+        tdbSetAssignmentStatusByID(assignmentID,'COMPLETED',push=False)
     # what history entries if any should happen here?
     q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE PairingID = '"+str(pairingID)+"';")
     r=q("SELECT * FROM 'Pairings' WHERE PairingID = "+str(pairingID)+";")
     if r:
         validate=r[0]
+        tdbPushTables()
         return {'validate':validate}
     else:
         return {'error':'Query did not return a value'}
     
-def tdbSetTeamStatusByID(teamID,status):
+def tdbSetTeamStatusByID(teamID,status,push=True):
     tdbAddHistoryEntry('Status changed to '+status,teamID=teamID,recordedBy='SYSTEM')
     q("UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamID = '"+str(teamID)+"';")
     r=q("SELECT * FROM 'Teams' WHERE TeamID = "+str(teamID)+";")
     if r:
         validate=r[0]
+        if push:
+            tdbPushTables()
         return {'validate':validate}
     else:
         return {'error':'Query did not return a value'}
 
-def tdbSetTeamStatusByName(teamName,status):
+def tdbSetTeamStatusByName(teamName,status,push=True):
     tdbAddHistoryEntry('Status changed to '+status,teamID=tdbGetTeamIDByName(teamName),recordedBy='SYSTEM')
     query="UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamName = '"+str(teamName)+"';"
-    return q(query)
+    r=q(query)
+    if r:
+        validate=r[0]
+        if push:
+            tdbPushTables()
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
 
-def tdbSetAssignmentStatusByID(assignmentID,status):
+def tdbSetAssignmentStatusByID(assignmentID,status,push=True):
     tdbAddHistoryEntry('Status changed to '+status,assignmentID=assignmentID,recordedBy='SYSTEM')
     q("UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE AssignmentID = '"+str(assignmentID)+"';")
     r=q("SELECT * FROM 'Assignments' WHERE AssignmentID = "+str(assignmentID)+";")
     if r:
         validate=r[0]
+        if push:
+            tdbPushTables()
         return {'validate':validate}
     else:
         return {'error':'Query did not return a value'}
 
-def tdbSetAssignmentStatusByName(assignmentName,status):
+def tdbSetAssignmentStatusByName(assignmentName,status,push=True):
     query="UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE AssignmentName = '"+str(assignmentName)+"';"
-    return q(query)
+    r=q(query)
+    if r:
+        validate=r[0]
+        if push:
+            tdbPushTables()
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
 
 def tdbPair(assignmentID,teamID):
     # query="UPDATE 'Teams' SET CurrentAssignments = "+str(assignmentID)+" WHERE TeamID="+str(teamID)+";"
     # query="UPDATE 'Pairings' SET TeamID = "+str(teamID)+" WHERE AssignmentID = "+str(assignmentID)+";"
     # query="INSERT INTO 'Pairings' (AssignmentID,TeamID) VALUES("+str(assignmentID)+","+str(teamID)+");"
     # return q(query)
+    tdbSetTeamStatusByID(teamID,'ASSIGNED',push=False) # don't push tables yet
+    tdbSetAssignmentStatusByID(assignmentID,'ASSIGNED',push=False) # don't push tables yet
     assignmentName=tdbGetAssignmentNameByID(assignmentID)
     teamName=tdbGetTeamNameByID(teamID)
     tdbAddHistoryEntry("Pairing Created: Assignment "+assignmentName+" <=> Team "+teamName,assignmentID=assignmentID,teamID=teamID,recordedBy='SYSTEM')
     qInsert('Pairings',{'AssignmentID':assignmentID,'TeamID':teamID})
     r=q('SELECT * FROM Pairings ORDER BY PairingID DESC LIMIT 1;')
     validate=r[0]
+    tdbPushTables()
     return {'validate':validate}
 
 def tdbUpdateTeamLastEditEpoch(teamID):
@@ -450,9 +542,17 @@ def tdbAddHistoryEntry(entry,assignmentID=-1,teamID=-1,recordedBy='N/A'):
         "RecordedBy":recordedBy,
         "Epoch":round(time.time())})
 
-def tdbGetHistory(assignmentID=None,teamID=None,useAnd=None):
-    if not assignmentID and not teamID:
+def tdbGetPairingIDsByID(pairingID=None):
+    r=tdbGetPairings(pairingID)
+    # print("pairingID r:"+str(r))
+    return True
+
+def tdbGetHistory(assignmentID=None,teamID=None,pairingID=None,useAnd=None):
+    if not assignmentID and not teamID and not pairingID:
         return([])
+    if pairingID:
+        [teamID,assignmentID]=tdbGetPairingIDsByID(pairingID)
+        op='AND'
     op='OR' # by default, return history entries that involve either the team or the assignment
     if useAnd:
         op='AND' # optionally return history entries that only affect the status of both team and assignment
