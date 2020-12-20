@@ -132,6 +132,7 @@ class assignmentTrackerApp(App):
         self.pairingDetailBeingShown=[]
         self.pairingHistoryRVList=[1,2,3,4,5]
         self.apiOKText="<h1>AssignmentTracker Database API</h1>"
+        self.lastSyncTimeStamp=0
 
         self.lan=False
         self.cloud=False
@@ -207,9 +208,10 @@ class assignmentTrackerApp(App):
             r=self.checkForCloud()
             Logger.info("checkForCloud response: "+str(r))
             self.cloud=str(r).startswith(self.apiOKText)
-        r=self.checkForLocalhost()
-        Logger.info("checkForLocalhost response: "+str(r))
-        self.localhost=str(r).startswith(self.apiOKText)
+            if not self.cloud:
+                r=self.checkForLocalhost()
+                Logger.info("checkForLocalhost response: "+str(r))
+                self.localhost=str(r).startswith(self.apiOKText)
         Logger.info("LAN:"+str(self.lan)+" cloud:"+str(self.cloud)+" localhost:"+str(self.localhost))
         self.initPopup.dismiss()
 
@@ -425,20 +427,21 @@ class assignmentTrackerApp(App):
                     Logger.info("SSID line found:"+line)
                     self.ssid=line.split(': ')[1]
     
-    
-# connection issues: we want to see this type of transcript:    
-# [INFO   ] calling checkForCloud
-# [INFO   ] ComboEdit.on_text called:<__main__.ComboEdit object at 0xc964e490>:
-# [INFO   ] ComboEdit.on_options called:<__main__.ComboEdit object at 0xc964e490>:[]
-# [INFO   ] options:[]
-# [INFO   ] on_checkForCloud_success called: response=<h1>Tracker Database API</h1>
-# <p>API for interacting with the sign-in databases</p>
-# [INFO   ]   valid response detected; cloud connection established.
-# [INFO   ] Requesting roster from cloud server...
-# [INFO   ] on_roster_success called
-# [INFO   ]   roster saved to ./roster.json
-# [INFO   ] reading json roster file:./roster.json
-# [INFO   ] opened...
+    # for now, request the entire database from the host, determine differences,
+    #  and for each difference,
+    def sync(self):
+        Logger.info("sync called: lastSyncTimeStamp="+str(self.lastSyncTimeStamp))
+        self.sendRequest("api/v1/since/"+str(int(self.lastSyncTimeStamp)),on_success=self.on_sync_success)
+        # hostTeams=self.sendRequest("api/v1/teams",on_success=self.on_sync_success)
+        # Logger.info("hostTeams:"+str(hostTeams))
+        # hostAssignments=self.sendRequest("api/v1/assignments")
+        # hostPairings=self.sendRequest("api/v1/pairings")
+        # hostHistory=self.sendRequest("api/v1/history")
+
+    def on_sync_success(self,request,result):
+        Logger.info("  on_sync_success called:"+str(result))
+        self.lastSyncTimeStamp=float(result['timestamp'])
+        Logger.info("  lastSyncTimeStamp is now "+str(self.lastSyncTimeStamp))
 
 # apparently, without Clock.tick() at the end of the success handler,
 #  the roster loader doesn't think self.cloud is True yet, therefore it doesn't
@@ -520,6 +523,7 @@ class assignmentTrackerApp(App):
             self.assignmentsScreen.assignmentsRVList=self.assignmentsScreen.assignmentsRVList+row
         self.sm.transition=NoTransition()
         self.sm.current='assignmentsScreen'
+        self.sync()
 
     def updateCounts(self):
         Logger.info('updateCounts called')
