@@ -137,7 +137,7 @@ class assignmentTrackerApp(App):
         self.cloud=False
         self.localhost=False
 
-        self.device='SITUATION UNIT'
+        self.nodeName='SITUATION UNIT'
         self.callsignPool=list(map(str,range(101,200)))
         self.assignmentNamePool=[chr(a)+chr(b) for a in range(65,91) for b in range(65,91)] # AA..AZ,BA..BZ,..
 
@@ -149,12 +149,12 @@ class assignmentTrackerApp(App):
         self.sm.add_widget(TeamsScreen(name='teamsScreen'))
         self.teamsScreen=self.sm.get_screen('teamsScreen')
 
-        self.teamsScreen.ids.deviceHeader.ids.deviceLabel.text=self.device
+        self.teamsScreen.ids.deviceHeader.ids.deviceLabel.text=self.nodeName
 
         self.sm.add_widget(AssignmentsScreen(name='assignmentsScreen'))
         self.assignmentsScreen=self.sm.get_screen('assignmentsScreen')
 
-        self.assignmentsScreen.ids.deviceHeader.ids.deviceLabel.text=self.device
+        self.assignmentsScreen.ids.deviceHeader.ids.deviceLabel.text=self.nodeName
 
         self.sm.add_widget(NewTeamScreen(name='newTeamScreen'))
         self.newTeamScreen=self.sm.get_screen('newTeamScreen')
@@ -198,16 +198,15 @@ class assignmentTrackerApp(App):
         self.initPopup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
         self.getAPIKeys()
         self.check_connectivity()
-        # these are all asynchronous requests, so, wait until there is an answer (or timeout) from each
-        # r=self.checkForLAN()
-        # self.lan=str(r).startswith(self.apiOKText)
-        # Logger.info("checkForLAN response: "+str(r))
-        # if self.lan:
-        #     self.cloud=False # if LAN is responding, don't use the cloud and don't bother checking
-        # else:
-        #     r=self.checkForCloud()
-        #     Logger.info("checkForCloud response: "+str(r))
-        #     self.cloud=str(r).startswith(self.apiOKText)
+        r=self.checkForLAN()
+        self.lan=str(r).startswith(self.apiOKText)
+        Logger.info("checkForLAN response: "+str(r))
+        if self.lan:
+            self.cloud=False # if LAN is responding, don't use the cloud and don't bother checking
+        else:
+            r=self.checkForCloud()
+            Logger.info("checkForCloud response: "+str(r))
+            self.cloud=str(r).startswith(self.apiOKText)
         r=self.checkForLocalhost()
         Logger.info("checkForLocalhost response: "+str(r))
         self.localhost=str(r).startswith(self.apiOKText)
@@ -219,8 +218,8 @@ class assignmentTrackerApp(App):
             sys.exit()
 
         tdbInit()
-        # self.cloudInit()
-        self.localhostJoin(init=True)
+        self.cloudJoin(init=True)
+        # self.localhostJoin(init=True)
 
         # self.pusher_appid=None
         # self.pusher_key=None
@@ -271,13 +270,16 @@ class assignmentTrackerApp(App):
         # the only time that websockets will be sent to localhost is when
         #  neither LAN nor cloud web hosts are responding.
 
-    def cloudInit(self):
+    def cloudJoin(self,init=False):
         if self.cloud:
-            self.cloudRequest('api/v1/init','POST')
+            d={'NodeName':self.nodeName}
+            if init:
+                d['Init']=True
+            self.cloudRequest('api/v1/join','POST',d,timeout=5) # make this a blocking call
 
     def localhostJoin(self,init=False):
         if self.localhost:
-            d={'NodeName':'RESOURCE UNIT'}
+            d={'NodeName':self.nodeName}
             if init:
                 d['Init']=True
             self.localhostRequest('api/v1/join','POST',d,timeout=5) # make this a blocking call
@@ -490,23 +492,10 @@ class assignmentTrackerApp(App):
 
     def buildLists(self):
         self.teamsList=tdbGetTeamsView()
-        # self.teamsList=self.sendRequest("api/v1/teams/view",timeout=5)
         self.assignmentsList=tdbGetAssignmentsView()
-        # self.assignmentsList=self.sendRequest("api/v1/assignments/view",timeout=5)
-        Logger.info("teamsList:"+str(self.teamsList))
-        Logger.info("assignmentsList:"+str(self.assignmentsList))
+        # Logger.info("teamsList:"+str(self.teamsList))
+        # Logger.info("assignmentsList:"+str(self.assignmentsList))
         self.updateCounts()
-        # when to push tables over websockets?  Should the client be doing this at all?
-        #  probably not - let the server do it on every change
-        # tdbPushTables(self.teamsList,self.assignmentsList,self.teamsCountText,self.assignmentsCountText)
-
-    # def pushAssignmentsTable(self):
-    #     cols=["Assignment","Team","Status","Resource"]
-    #     d=self.assignmentsList
-    #     table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
-    #     table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
-    #     table+='\n</table>'
-    #     self.pusher_client.trigger('my-channel', 'assignmentsViewUpdate', table)
 
     def showTeams(self,*args):
         Logger.info('showTeams called')
@@ -534,21 +523,22 @@ class assignmentTrackerApp(App):
 
     def updateCounts(self):
         Logger.info('updateCounts called')
-        self.unassignedTeamsCount=len([x for x in self.teamsList if x[1]=='UNASSIGNED'])
-        self.assignedTeamsCount=len(self.teamsList)-self.unassignedTeamsCount
-        self.unassignedAssignmentsCount=len([x for x in self.assignmentsList if x[2]=='UNASSIGNED'])
-        self.assignedAssignmentsCount=len(self.assignmentsList)-self.unassignedAssignmentsCount
-        self.teamsCountText=str(self.assignedTeamsCount)+' Assigned,     '+str(self.unassignedTeamsCount)+' Unassigned'
-        self.assignmentsCountText=str(self.assignedAssignmentsCount)+' Assigned,     '+str(self.unassignedAssignmentsCount)+' Unassigned'
+        d=tdbPushTables() # clients won't actually push websockets, but the return value has the counts
+        # self.unassignedTeamsCount=len([x for x in self.teamsList if x[1]=='UNASSIGNED'])
+        # self.assignedTeamsCount=len(self.teamsList)-self.unassignedTeamsCount
+        # self.unassignedAssignmentsCount=len([x for x in self.assignmentsList if x[2]=='UNASSIGNED'])
+        # self.assignedAssignmentsCount=len(self.assignmentsList)-self.unassignedAssignmentsCount
+        teamsCountText='A:'+str(d['assignedTeamsCount'])+'     U:'+str(d['unassignedTeamsCount'])
+        assignmentsCountText='A:'+str(d['assignedAssignmentsCount'])+'     U:'+str(d['unassignedAssignmentsCount'])+'     C:'+str(d['completedAssignmentsCount'])
 
-        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=35]Teams\n[size=12]'+self.teamsCountText
+        self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=35]Teams\n[size=12]'+teamsCountText
         self.teamsScreen.ids.viewSwitcher.ids.teamsViewButton.line_height=0.7
-        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=20]Assignments\n[size=12]'+self.assignmentsCountText
+        self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=20]Assignments\n[size=12]'+assignmentsCountText
         self.teamsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.95
         
-        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=20]Teams\n[size=12]'+self.teamsCountText
+        self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.text='[size=20]Teams\n[size=12]'+teamsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.teamsViewButton.line_height=0.95
-        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+self.assignmentsCountText
+        self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+assignmentsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.7
 
     def showPairingDetail(self,assignmentName,teamName=None):

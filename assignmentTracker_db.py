@@ -363,33 +363,31 @@ def tdbGetTeamsView():
     # print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
     return teamsList
 
-def tdbPushTables(teamsViewList=None,assignmentsViewList=None,teamsCountText=None,assignmentsCountText=None):
+# tdbUpdateTables can also be used to get the team and assignment counts
+def tdbPushTables(teamsViewList=None,assignmentsViewList=None):
     if not teamsViewList:
         teamsViewList=tdbGetTeamsView()
-    if not assignmentsViewList:
+    if not assignmentsViewList: # completed assignments should be part of assignmentsViewList
         assignmentsViewList=tdbGetAssignmentsView()
-    if not teamsCountText:
-        unassignedTeamsCount=len([x for x in teamsViewList if x[2]=='UNASSIGNED'])
-        assignedTeamsCount=len(teamsViewList)-unassignedTeamsCount
-        teamsCountText=str(assignedTeamsCount)+' Assigned / '+str(unassignedTeamsCount)+' Unassigned'
-        unassignedAssignmentsCount=len([x for x in assignmentsViewList if x[2]=='UNASSIGNED'])
-        assignedAssignmentsCount=len(assignmentsViewList)-unassignedAssignmentsCount
-        assignmentsCountText=str(assignedAssignmentsCount)+' Assigned / '+str(unassignedAssignmentsCount)+' Unassigned'
+    assignmentsViewNotCompletedList=[x for x in assignmentsViewList if x[2]!='COMPLETED']
+    assignmentsViewCompletedList=[x for x in assignmentsViewList if x[2]=='COMPLETED']
+    unassignedTeamsCount=len([x for x in teamsViewList if x[2]=='UNASSIGNED'])
+    assignedTeamsCount=len(teamsViewList)-unassignedTeamsCount
+    unassignedAssignmentsCount=len([x for x in assignmentsViewList if x[2]=='UNASSIGNED'])
+    completedAssignmentsCount=len([x for x in assignmentsViewList if x[2]=='COMPLETED'])
+    assignedAssignmentsCount=len(assignmentsViewList)-unassignedAssignmentsCount-completedAssignmentsCount
+    d={
+        "teamsView":teamsViewList,
+        "assignmentsViewNotCompleted":assignmentsViewNotCompletedList,
+        "assignmentsViewCompleted":assignmentsViewCompletedList,
+        "assignedTeamsCount":assignedTeamsCount,
+        "unassignedTeamsCount":unassignedTeamsCount,
+        "assignedAssignmentsCount":assignedAssignmentsCount,
+        "unassignedAssignmentsCount":unassignedAssignmentsCount,
+        "completedAssignmentsCount":completedAssignmentsCount}
     if wsOk: # wsSend will send over URL or over pusher.com as appropriate
-        wsSend(json.dumps({
-            "teamsView":teamsViewList,
-            "assignmentsView":assignmentsViewList,
-            "teamsCount":teamsCountText,
-            "assignmentsCount":assignmentsCountText}))
-
-    # def pushTeamsTable(self):
-    #     # no-module table writer based on https://stackoverflow.com/a/49889528
-    #     cols=["Team","Status","Resource","Current","Previous"]
-    #     d=self.teamsList
-    #     table='<table>\n<tr>{}</tr>'.format('\n'.join('<th>{}</th>'.format(i) for i in cols))
-    #     table+='\n'.join(['<tr>{}</tr>'.format('\n'.join(['<td>{}</td>'.format(b) for b in i])) for i in d])
-    #     table+='\n</table>'
-    #     self.pusher_client.trigger('my-channel', 'teamsViewUpdate', table)
+        wsSend(json.dumps(d))
+    return(d)
 
 def tdbGetAssignments(assignmentID=None):
     # createAssignmentsTableIfNeeded()

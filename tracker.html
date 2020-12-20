@@ -47,6 +47,15 @@
       position:absolute;
       top: 0px;
     }
+    #assignmentsCompletedDiv {
+      position: relative;
+      top: 20px;
+    }
+    span.count {
+      font-size:10px;
+      padding-left:10px;
+      padding-right:10px;
+    }
     .big {
       font-size:26px;
       margin:0px;
@@ -155,13 +164,17 @@
     }
 
     function wsHandleEvent (event) {
-      var teamsDiv = document.getElementById('teamsDiv');
       var d=JSON.parse(event.data);
       var msg=JSON.parse(d.msg);
+      // alert("incoming message:"+JSON.stringify(msg))
       createTable([['Team',52.4],['Asgmt.',62.8],['Status',129.2],['Resource',118],['Prev.',60]],msg.teamsView,teamsDiv);
-      createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsView,assignmentsDiv);
-      teamsCount.innerText=msg.teamsCount;
-      assignmentsCount.innerText=msg.assignmentsCount;
+      createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewNotCompleted,assignmentsNotCompletedDiv);
+      createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewCompleted,assignmentsCompletedDiv);      
+      assignedTeamsLabel.innerHTML="A:"+msg.assignedTeamsCount;
+      unassignedTeamsLabel.innerHTML="U:"+msg.unassignedTeamsCount;
+      assignedAssignmentsLabel.innerHTML="A:"+msg.assignedAssignmentsCount;
+      unassignedAssignmentsLabel.innerHTML="U:"+msg.unassignedAssignmentsCount;
+      completedAssignmentsLabel.innerHTML="C:"+msg.completedAssignmentsCount;
     };
 
     var colorMap={
@@ -169,86 +182,99 @@
           'ASSIGNED': '#fff',
           'WORKING': '#fff',
           'ENROUTE TO IC': '#fcc',
-          'DEBRIEFING': '#ccf'};
+          'DEBRIEFING': '#ccf',
+          'COMPLETED': '#bbb'};
     
     var teamsSortCol=0;
     var teamsSortDir='asc';
-    var assignmentsSortCol=0;
-    var assignmentsSortDir='asc';
+    var assignmentsNotCompletedSortCol=0;
+    var assignmentsNotCompletedSortDir='asc';
+    var assignmentsCompletedSortCol=0;
+    var assignmentsCompletedSortDir='asc';
+
 
     // from https://stackoverflow.com/a/15164958
     function createTable(columnData,tableData,container) {
-      var table = document.createElement('table');
-      var id=container.id+'Table';
-      table.id=id;
-      // show the table now, so that it is defined before the
-      //  sort callback is called the first time
-      container.replaceChild(table,container.childNodes[0]);
-      var header = document.createElement('thead');
-      var colNum=0;
-      var name="";
-      columnData.forEach(function(col) {
-        var th=document.createElement('th');
-        if (Array.isArray(col)) {
-          name=col[0];
-          th.style.width=col[1]+'px';
-          th.style.minWidth=col[1]+'px';
-          th.style.maxWidth=col[1]+'px';
-        } else {
-          name=col;
-        }
-        th.innerHTML="<span>"+name+"&nbsp;<table class='arrowTable'><tr><td id='"+id+"-up"+colNum+"' class='up-gray'><tr><td id='"+id+"-down"+colNum+"' class='down-gray'></table>"
-        // the following syntax is needed to pass variable arguments
-        //  to the onclick callback
-        // https://stackoverflow.com/a/3495722/3577105
-        th.onclick=(function() {
-          var c=colNum;
-          var i=id;
-          return function() {
-            var d; // sort direction
-            if(container.id=='teamsDiv') {
-              d=teamsSortDir;
-            } else {
-              d=assignmentsSortDir;
-            }
-            // when clicked, sort in the opposite direction to the current sort
-            if (d=='asc') {
-              d='desc';
-            } else {
-              d='asc';
-            }
-            sortTable(i,c,d);
-          }})();
-        header.appendChild(th);
-        colNum++;
-      });
-      table.appendChild(header);
-      var tableBody = document.createElement('tbody');
-      // color mapping from https://dev.to/k_penguin_sato/use-lookup-tables-for-cleaning-up-your-js-ts-code-9gk
-      const statusToColor=(status)=>colorMap[status]||"gray";
-      tableData.forEach(function(rowData) {
-        var status=rowData[2]; // same index for team table and assignment table
-        var row = document.createElement('tr');
-        row.style.backgroundColor=statusToColor(status);
-        rowData.forEach(function(cellData) {
-          var cell = document.createElement('td');
-          cell.appendChild(document.createTextNode(cellData));
-          row.appendChild(cell);
+      if(tableData.length > 0) {
+        var table = document.createElement('table');
+        var id=container.id+'Table';
+        table.id=id;
+        // show the table now, so that it is defined before the
+        //  sort callback is called the first time
+        container.replaceChild(table,container.childNodes[0]);
+        var header = document.createElement('thead');
+        var colNum=0;
+        var name="";
+        columnData.forEach(function(col) {
+          var th=document.createElement('th');
+          if (Array.isArray(col)) {
+            name=col[0];
+            th.style.width=col[1]+'px';
+            th.style.minWidth=col[1]+'px';
+            th.style.maxWidth=col[1]+'px';
+          } else {
+            name=col;
+          }
+          th.innerHTML="<span>"+name+"&nbsp;<table class='arrowTable'><tr><td id='"+id+"-up"+colNum+"' class='up-gray'><tr><td id='"+id+"-down"+colNum+"' class='down-gray'></table>"
+          // the following syntax is needed to pass variable arguments
+          //  to the onclick callback
+          // https://stackoverflow.com/a/3495722/3577105
+          th.onclick=(function() {
+            var c=colNum;
+            var i=id;
+            return function() {
+              var d; // sort direction
+              if(container.id=='teamsDiv') {
+                d=teamsSortDir;
+              } else if(container.id=='assignmentsNotCompletedDiv') {
+                d=assignmentsNotCompletedSortDir;
+              } else if(container.id=='assignmentsCompletedDiv') {
+                d=assignmentsCompletedSortDir;
+              }
+              // when clicked, sort in the opposite direction to the current sort
+              if (d=='asc') {
+                d='desc';
+              } else {
+                d='asc';
+              }
+              sortTable(i,c,d);
+            }})();
+          header.appendChild(th);
+          colNum++;
         });
-        tableBody.appendChild(row);
-      });
-      table.appendChild(tableBody);
+        table.appendChild(header);
+        var tableBody = document.createElement('tbody');
+        // color mapping from https://dev.to/k_penguin_sato/use-lookup-tables-for-cleaning-up-your-js-ts-code-9gk
+        const statusToColor=(status)=>colorMap[status]||"gray";
+        tableData.forEach(function(rowData) {
+          var status=rowData[2]; // same index for team table and assignment table
+          var row = document.createElement('tr');
+          row.style.backgroundColor=statusToColor(status);
+          rowData.forEach(function(cellData) {
+            var cell = document.createElement('td');
+            cell.appendChild(document.createTextNode(cellData));
+            row.appendChild(cell);
+          });
+          tableBody.appendChild(row);
+        });
+        table.appendChild(tableBody);
 
-      // sort the table immediately, using the previous sort column and direction
-      var sc,sd; // sort column and sort direction
-      if(id=='teamsDivTable') {
-        sc=teamsSortCol;
-        sd=teamsSortDir;
+        // sort the table immediately, using the previous sort column and direction
+        var sc,sd; // sort column and sort direction
+        if(id=='teamsDivTable') {
+          sc=teamsSortCol;
+          sd=teamsSortDir;
+        } else if(id=='assignmentsNotCompletedDivTable') {
+          sc=assignmentsNotCompletedSortCol;
+          sd=assignmentsNotCompletedSortDir;
+        } else if(id=='assignmentsCompletedDivTable') {
+          sc=assignmentsCompletedSortCol;
+          sd=assignmentsCompletedSortDir;
+        }
+        sortTable(id,sc,sd);
       } else {
-        sc=assignmentsSortCol;
-        sd=assignmentsSortDir;
+        container.innerHTML="&nbsp;";
       }
-      sortTable(id,sc,sd);
     }
 
     function showTeamsView(){
@@ -338,25 +364,34 @@
       if (tableID=='teamsDivTable') {
         teamsSortCol=n;
         teamsSortDir=dir;
-      } else {
-        assignmentsSortCol=n;
-        assignmentsSortDir=dir;
+      } else if (tableID=='assignmentsNotCompletedDivTable') {
+        assignmentsNotCompletedSortCol=n;
+        assignmentsNotCompletedSortDir=dir;
+      } else if (tableID=='assignmentsCompletedDivTable') {
+        assignmentsCompletedSortCol=n;
+        assignmentsCompletedSortDir=dir;
       }
     }
   </script>
   <div id="buttonsDiv">
     <button type="button" onclick="showTeamsView()">
       <div id="TeamsButtonHeader">Teams</div>
-      <span id="teamsCount" font-size:8px;>0 Assigned / 0 Unassigned</span>
+      <span id="assignedTeamsLabel" class="count"></span>
+      <span id="unassignedTeamsLabel" class="count"></span>
     </button>
     <button type="button" onclick="showAssignmentsView()">
       <div id="AssignmentsButtonHeader">Assignments</div>
-      <span id="assignmentsCount" font-size:8px;>0 Assigned / 0 Unassigned</span>
+      <span id="assignedAssignmentsLabel" class="count"></span>
+      <span id="unassignedAssignmentsLabel" class="count"></span>
+      <span id="completedAssignmentsLabel" class="count"></span>
     </button>
     <span id="wsIcon"></span>
   </div>
   <div id='tablesDiv'>
     <div id = 'teamsDiv'>Your result will display here</div>
-    <div id = 'assignmentsDiv'>Your result will display here</div>
+    <div id = 'assignmentsDiv'>
+      <div id = 'assignmentsNotCompletedDiv'>Your result will display here</div>
+      <div id = 'assignmentsCompletedDiv'>&nbsp;</div>
+    </div>
   </div>
 </body>
