@@ -117,6 +117,14 @@ if platform in ('win'):
 #     else:
 #         Logger.info("TOAST:"+text)
 
+# NOTE regarding ID values:
+# tid = team ID; aid = assignment ID; pid = pairing ID
+# these values are set to -1 when created on a client, or a positive integer when
+#  created on the host.  The positive integer id is sent to all clients
+#  as part of the new object http request response, whether the request was made
+#  by the creating client, or by sync.  So, if id is -1 in steady state, either host
+#  communication has been lost, or the host had an error, or there is no host.
+
 class assignmentTrackerApp(App):
     def build(self):
         Logger.info("build starting...")
@@ -205,13 +213,19 @@ class assignmentTrackerApp(App):
         if self.lan:
             self.cloud=False # if LAN is responding, don't use the cloud and don't bother checking
         else:
-            r=self.checkForCloud()
+            # sometimes pythonanywhere won't wake up for the first request even after a 5 second timeout
+            #  so, try a first request with shorter timeout; if that times out, try another request
+            r=self.checkForCloud(2)
             Logger.info("checkForCloud response: "+str(r))
             self.cloud=str(r).startswith(self.apiOKText)
             if not self.cloud:
-                r=self.checkForLocalhost()
-                Logger.info("checkForLocalhost response: "+str(r))
-                self.localhost=str(r).startswith(self.apiOKText)
+                r=self.checkForCloud(5)
+                Logger.info("checkForCloud response: "+str(r))
+                self.cloud=str(r).startswith(self.apiOKText)
+                if not self.cloud:
+                    r=self.checkForLocalhost()
+                    Logger.info("checkForLocalhost response: "+str(r))
+                    self.localhost=str(r).startswith(self.apiOKText)
         Logger.info("LAN:"+str(self.lan)+" cloud:"+str(self.cloud)+" localhost:"+str(self.localhost))
         self.initPopup.dismiss()
 
@@ -223,33 +237,8 @@ class assignmentTrackerApp(App):
         self.cloudJoin(init=True)
         # self.localhostJoin(init=True)
 
-        # self.pusher_appid=None
-        # self.pusher_key=None
-        # self.pusher_secret=None
-        # self.pusher_cluster=None
-        # self.pusher_appid=os.getenv('TRACKER_PUSHER_APPID')
-        # self.pusher_key=os.getenv('TRACKER_PUSHER_KEY')
-        # self.pusher_secret=os.getenv('TRACKER_PUSHER_SECRET')
-        # self.pusher_cluster=os.getenv('TRACKER_PUSHER_CLUSTER')
-
-        # self.pusher_client = pusher.Pusher(
-        #     app_id=self.pusher_appid,
-        #     key=self.pusher_key,
-        #     secret=self.pusher_secret,
-        #     cluster=self.pusher_cluster,
-        #     ssl=True)
-
         # some hardcoded initial data for development
         self.newTeam('101','Ground Type 1')
-        # self.newTeam('102','K9 (HRD)')
-        # self.newAssignment('AA','Ground Type 1')
-        # self.newAssignment('AB','K9 (HBD)')
-        # self.newAssignment('AG','K9 (HRD)')
-        # self.newAssignment('AK','Ground Type 1')
-        # self.newAssignment('AL','Ground Type 2')
-        # self.newAssignment('ZZ','Ground Type 2')
-        # self.pair('AA','101')
-        # self.pair('AB','102')
 
         self.showTeams()
 
@@ -394,10 +383,10 @@ class assignmentTrackerApp(App):
         r=self.lanRequest("","GET",timeout=3)
         return r
 
-    def checkForCloud(self):
+    def checkForCloud(self,timeout):
         self.cloud=False
         print("calling checkForCloud")
-        r=self.cloudRequest("","GET",timeout=5) # timeout 4 has actually been too short for initial wakeup
+        r=self.cloudRequest("","GET",timeout=timeout)
         return r
 
     def checkForLocalhost(self):
@@ -431,7 +420,8 @@ class assignmentTrackerApp(App):
     #  and for each difference,
     def sync(self):
         Logger.info("sync called: lastSyncTimeStamp="+str(self.lastSyncTimeStamp))
-        self.sendRequest("api/v1/since/"+str(int(self.lastSyncTimeStamp)),on_success=self.on_sync_success)
+        # self.sendRequest("api/v1/since/"+str(int(self.lastSyncTimeStamp)),on_success=self.on_sync_success)
+        self.sendRequest("api/v1/since/0",on_success=self.on_sync_success)
         # hostTeams=self.sendRequest("api/v1/teams",on_success=self.on_sync_success)
         # Logger.info("hostTeams:"+str(hostTeams))
         # hostAssignments=self.sendRequest("api/v1/assignments")
@@ -442,6 +432,7 @@ class assignmentTrackerApp(App):
         Logger.info("  on_sync_success called:"+str(result))
         self.lastSyncTimeStamp=float(result['timestamp'])
         Logger.info("  lastSyncTimeStamp is now "+str(self.lastSyncTimeStamp))
+        tdbProcessSync(result)
 
 # apparently, without Clock.tick() at the end of the success handler,
 #  the roster loader doesn't think self.cloud is True yet, therefore it doesn't
@@ -469,9 +460,15 @@ class assignmentTrackerApp(App):
         r=tdbNewTeam(name,resource)
         # Logger.info('return from newTeam:')
         # Logger.info(r)
-        self.sendRequest("api/v1/teams/new","POST",{'TeamName':name,'Resource':resource})
+        self.newTeamN=r['validate']['n']
+        self.sendRequest("api/v1/teams/new","POST",{'TeamName':name,'Resource':resource},on_success=self.on_newTeam_success)
         self.updateNewTeamNameSpinner()
         self.buildLists()
+
+    def on_newTeam_success(self,request,response):
+        v=response['validate']
+        tdbNewTeamFinalize(self.newTeamN,v['tid'],v['LastEditEpoch'])
+        self.newTeamN=None
 
     def newAssignment(self,name=None,intendedResource=None):
         name=name or self.assignmentNamePool.pop(0)
@@ -479,11 +476,40 @@ class assignmentTrackerApp(App):
             self.assignmentNamePool.remove(name)
         intendedResource=intendedResource or self.newAssignmentScreen.ids.resourceSpinner.text
         r=tdbNewAssignment(name,intendedResource)
-        # Logger.info('return from newAssignment:')
-        # Logger.info(r)
-        self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource})
+        self.newAssignmentN=r['validate']['n']
+        self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource},on_success=self.on_newAssignment_success)
         self.updateNewAssignmentNameSpinner()
         self.buildLists()
+
+    def on_newAssignment_success(self,request,response):
+        v=response['validate']
+        tdbNewAssignmentFinalize(self.newAssignmentN,v['aid'],v['LastEditEpoch'])
+        self.newAssignmentN=None
+
+    def newPairing(self,assignmentName=None,teamName=None):
+        if not assignmentName:
+            assignmentName=self.pairingDetailBeingShown[0]
+        if not teamName:
+            teamName=self.newPairingScreen.ids.teamSpinner.text.split()[0]
+        Logger.info("pairing assignment "+str(assignmentName)+" with team "+str(teamName))
+        aid=tdbGetAssignmentIDByName(assignmentName)
+        tid=tdbGetTeamIDByName(teamName)
+        r=tdbNewPairing(aid,tid)
+        self.newPairingN=r['validate']['n']
+        tdbSetTeamStatusByName(teamName,'ASSIGNED')
+        tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
+        self.sendRequest("api/v1/pairings/new","POST",{"aid":aid,"tid":tid},on_success=self.on_newPairing_success)
+        # avoid sending multiple requests back to back, since this can create race conditions
+        #  and html flickers with clients receiving multiple different websocket messages
+        #  in rapid succession; instead, make the new pairings API handler set the team
+        #  and assignment statuses and then just do one websocket send 
+        # self.sendRequest("api/v1/teams/"+str(tid)+"/status","PUT",{"NewStatus":"ASSIGNED"})
+        # self.sendRequest("api/v1/assignments/"+str(aid)+"/status","PUT",{"NewStatus":"ASSIGNED"})
+
+    def on_newPairing_success(self,request,response):
+        v=response['validate']
+        tdbNewPairingFinalize(self.newPairingN,v['pid'],v['LastEditEpoch'])
+        self.newPairingN=None
 
     def updateNewTeamNameSpinner(self):
         self.newTeamScreen.ids.nameSpinner.values=self.callsignPool[0:8]
@@ -578,10 +604,10 @@ class assignmentTrackerApp(App):
         # get history from tdb, regardless of connections
         if teamName:
             history=[[x['Entry'],x['RecordedBy'],time.strftime('%H:%M',time.localtime(x['Epoch']))] for x in
-                    tdbGetHistory(assignmentID=tdbGetAssignmentIDByName(assignmentName),teamID=tdbGetTeamIDByName(teamName))[::-1]]
+                    tdbGetHistory(aid=tdbGetAssignmentIDByName(assignmentName),tid=tdbGetTeamIDByName(teamName))[::-1]]
         else:
             history=[[x['Entry'],x['RecordedBy'],time.strftime('%H:%M',time.localtime(x['Epoch']))] for x in
-                    tdbGetHistory(assignmentID=tdbGetAssignmentIDByName(assignmentName))[::-1]]
+                    tdbGetHistory(aid=tdbGetAssignmentIDByName(assignmentName))[::-1]]
         history=[y for x in history for y in x] # flattened list, needed by RecycleGridLayout
         self.pairingDetailScreen.ids.historyRV.data=[{'text': str(x)} for x in history]
       
@@ -631,25 +657,6 @@ class assignmentTrackerApp(App):
             self.newPairingScreen.ids.teamSpinner.text='No teams defined'
         self.sm.current='newPairingScreen'
 
-    def pair(self,assignmentName=None,teamName=None):
-        if not assignmentName:
-            assignmentName=self.pairingDetailBeingShown[0]
-        if not teamName:
-            teamName=self.newPairingScreen.ids.teamSpinner.text.split()[0]
-        Logger.info("pairing assignment "+str(assignmentName)+" with team "+str(teamName))
-        aid=tdbGetAssignmentIDByName(assignmentName)
-        tid=tdbGetTeamIDByName(teamName)
-        tdbPair(aid,tid)
-        tdbSetTeamStatusByName(teamName,'ASSIGNED')
-        tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
-        self.sendRequest("api/v1/pairings/new","POST",{"AssignmentID":aid,"TeamID":tid})
-        # avoid sending multiple requests back to back, since this can create race conditions
-        #  and html flickers with clients receiving multiple different websocket messages
-        #  in rapid succession; instead, make the new pairings API handler set the team
-        #  and assignment statuses and then just do one websocket send 
-        # self.sendRequest("api/v1/teams/"+str(tid)+"/status","PUT",{"NewStatus":"ASSIGNED"})
-        # self.sendRequest("api/v1/assignments/"+str(aid)+"/status","PUT",{"NewStatus":"ASSIGNED"})
-
     def changeTeamStatus(self,teamName=None,status=None):
         if not teamName:
             teamName=self.pairingDetailBeingShown[1]
@@ -658,27 +665,27 @@ class assignmentTrackerApp(App):
         if status=='DONE': # changing to DONE from pairing detail screen will 'close out' the current pairing
             [assignmentName,teamName]=self.pairingDetailBeingShown
             # 1. set pairing status to PREVIOUS
-            pairingID=tdbGetPairingIDByNames(assignmentName,teamName)
-            tdbSetPairingStatusByID(pairingID,'PREVIOUS')
-            self.sendRequest("api/v1/pairings/"+str(pairingID)+"/status","PUT",{"NewStatus":"PREVIOUS"})
+            pid=tdbGetPairingIDByNames(assignmentName,teamName)
+            tdbSetPairingStatusByID(pid,'PREVIOUS')
+            self.sendRequest("api/v1/pairings/"+str(pid)+"/status","PUT",{"NewStatus":"PREVIOUS"})
             # 2. set team status to UNASSIGNED
-            teamID=tdbGetTeamIDByName(teamName)
-            tdbSetTeamStatusByID(teamID,'UNASSIGNED')
-            self.sendRequest("api/v1/teams/"+str(teamID)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
+            tid=tdbGetTeamIDByName(teamName)
+            tdbSetTeamStatusByID(tid,'UNASSIGNED')
+            self.sendRequest("api/v1/teams/"+str(tid)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
             # 3. if this was the only current pairing involving the paired assignment,
             #  set that assignment's status to UNASSIGNED
             others=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
             Logger.info('others:'+str(others))
             if not others:
-                assignmentID=tdbGetAssignmentIDByName(assignmentName)
-                tdbSetAssignmentStatusByID(assignmentID,'UNASSIGNED')
-                self.sendRequest("api/v1/assignments/"+str(assignmentID)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
+                aid=tdbGetAssignmentIDByName(assignmentName)
+                tdbSetAssignmentStatusByID(aid,'UNASSIGNED')
+                self.sendRequest("api/v1/assignments/"+str(aid)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
             self.showAssignments()
         else:
             Logger.info('changing status for team '+str(teamName)+' to '+str(status))
-            teamID=tdbGetTeamIDByName(teamName)
-            tdbSetTeamStatusByID(teamID,status)
-            self.sendRequest("api/v1/teams/"+str(teamID)+"/status","PUT",{"NewStatus":str(status)})
+            tid=tdbGetTeamIDByName(teamName)
+            tdbSetTeamStatusByID(tid,status)
+            self.sendRequest("api/v1/teams/"+str(tid)+"/status","PUT",{"NewStatus":str(status)})
             self.pairingDetailScreen.ids.statusLabel.text=status
             self.pairingDetailStatusUpdate()
             self.pairingDetailHistoryUpdate()

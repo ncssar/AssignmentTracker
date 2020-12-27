@@ -29,39 +29,57 @@ from websocket import create_connection # not websockets; websocket (singular) a
 # use one table for teams, one table for assignments, and reduce duplication of data;
 #  store the pairing data in a separete table
 
+# NOTE regarding ID values:
+# tid = team ID; aid = assignment ID; pid = pairing ID
+# these values are set to -1 when created on a client, or a positive integer when
+#  created on the host.  The positive integer id is sent to all clients
+#  as part of the new object http request response, whether the request was made
+#  by the creating client, or by sync.  So, if id is -1 in steady state, either host
+#  communication has been lost, or the host had an error, or there is no host.
+
 TEAM_COLS=[
-    # TeamID is hardcoded as the primary key
+    # n is hardcoded as the primary key
+    ["tid","INTEGER"],
     ["TeamName","TEXT"],
     ["TeamStatus","TEXT DEFAULT 'UNASSIGNED'"],
     ["Resource","TEXT DEFAULT 'Ground Type 2'"],
     ["LastEditEpoch","REAL"]]
 
 ASSIGNMENT_COLS=[
-    # AssignmentID is hardcoded as the primary key
+    # n is hardcoded as the primary key
+    ["aid","INTEGER"],
     ["AssignmentName","TEXT"],
     ["AssignmentStatus","TEXT DEFAULT 'UNASSIGNED'"], # either UNASSIGNED or ASSIGNED
     ["IntendedResource","TEXT DEFAULT 'Ground Type 2'"],
     ["LastEditEpoch","REAL"]]
 
 PAIRING_COLS=[
-    ["TeamID","INTEGER"],
-    ["AssignmentID","INTEGER"],
+    # n is hardcoded as the primary key
+    ["pid","INTEGER"],
+    ["aid","INTEGER"],
+    ["tid","INTEGER"],
     ["PairingStatus","TEXT DEFAULT 'CURRENT'"],  # CURRENT or PREVIOUS
     ["LastEditEpoch","REAL"]]
 
 # History table: all activities are recorded in one table; each entry
-#   has columns for AsignmentID, TeamID, Entry, RecordedBy, Epoch;
+#   has columns for aid, tid, Entry, RecordedBy, Epoch;
 #   viewing the history can then be filtered by assignment, by team, 
 #   or by pairing (assignment/team combination)
 
 HISTORY_COLS=[
-    ["AssignmentID","INTEGER"],
-    ["TeamID","INTEGER"],
+    # n is hardcoded as the primary key
+    ["aid","INTEGER"],
+    ["tid","INTEGER"],
     ["Entry","TEXT"],
     ["RecordedBy","TEXT"],
     ["Epoch","INTEGER"]]
 
 TEAM_STATUSES=["UNASSIGNED","ASSIGNED","WORKING","ENROUTE TO IC","DEBRIEFING"]
+
+host=False # is this running on a web server host?
+nextAid=1 # only used if this is the host
+nextTid=1 # only used if this is the host
+nextPid=1 # only used if this is the host
 
 # websockets default values
 url=""
@@ -113,6 +131,9 @@ def q(query,params=None):
     else:
         r=cur.execute(query).fetchall()
     conn.commit()
+    # for update requests, return the number of rows affected
+    if query.lower().startswith('update'):
+        return cur.rowcount
     # print("  result:" +str(r))
     return r
 
@@ -147,25 +168,25 @@ def wsSend(msg,wsUrl=None):
             print("pusher send failed: "+str(e))
 
 def createTeamsTableIfNeeded():
-    colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT,"
+    colString="'n' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in TEAM_COLS])
     query='CREATE TABLE IF NOT EXISTS "Teams" ('+colString+');'
     return q(query)
 
 def createAssignmentsTableIfNeeded():
-    colString="'AssignmentID' INTEGER PRIMARY KEY AUTOINCREMENT,"
+    colString="'n' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in ASSIGNMENT_COLS])
     query='CREATE TABLE IF NOT EXISTS "Assignments" ('+colString+');'
     return q(query)
 
 def createPairingsTableIfNeeded():
-    colString="'PairingID' INTEGER PRIMARY KEY AUTOINCREMENT,"
+    colString="'n' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in PAIRING_COLS])
     query='CREATE TABLE IF NOT EXISTS "Pairings" ('+colString+');'
     return q(query)
 
 def createHistoryTableIfNeeded():
-    colString="'HistoryID' INTEGER PRIMARY KEY AUTOINCREMENT,"
+    colString="'n' INTEGER PRIMARY KEY AUTOINCREMENT,"
     colString+=', '.join([str(x[0])+" "+str(x[1]) for x in HISTORY_COLS])
     query='CREATE TABLE IF NOT EXISTS "History" ('+colString+');'
     return q(query)
@@ -179,10 +200,19 @@ def tdbInit(server=None):
     createAssignmentsTableIfNeeded()
     createPairingsTableIfNeeded()
     createHistoryTableIfNeeded()
+
     if server:
         wsUrl='ws://'+re.sub(':.*$','',server)+':80'
         global wsOk
         global url
+        global host
+        global nextTid
+        global nextAid
+        global nextPid
+        nextTid=1 # only used if this is the host
+        nextAid=1 # only used if this is the host
+        nextPid=1 # only used if this is the host
+        host=True
         wsOk=wsCheck(wsUrl)
         url=wsUrl
         print("wsCheck "+url+" : "+str(wsOk))
@@ -211,36 +241,80 @@ def qInsert(tableName,d):
 ##   handlers that call this code should perform jsonification, while client
 ##   nodes do not need to do any jsonification
 
-def tdbNewTeam(name,resource):
-    # createTeamsTableIfNeeded()
-    qInsert('Teams',{'TeamName':name,'Resource':resource,'LastEditEpoch':round(time.time(),2)})
-    # # create the team's history table
-    # tableName=d["TeamName"]+"History"
-    # colString="'TeamID' INTEGER PRIMARY KEY AUTOINCREMENT"
-    # colString+=', '.join([str(x[0])+" "+str(x[1]) for x in TEAM_HISTORY_COLS])
-    # query='CREATE TABLE IF NOT EXISTS "'+tableName+'" ('+colString+');'
-    # q(query)
-    # tdbAddTeamHistoryEntry({
-    #         'TeamName':teamName,
-    #         'Event':"Team Created",
-    #         'Epoch':time.time(),
-    #         'RecordedBy':'system'})
-    # validate
-    r=q('SELECT * FROM Teams ORDER BY TeamID DESC LIMIT 1;')
-    tdbAddHistoryEntry("Team "+name+" Created",teamID=r[0]["TeamID"],recordedBy='SYSTEM')
+def tdbNewTeam(name,resource,status=None,tid=None,lastEditEpoch=None):
+    # status, tid, and lastEditEpoch arguments will only exist if this is being called from tdbProcessSync
+    if host: # this clause will only run on the host
+        global nextTid
+        tid=nextTid
+        nextTid+=1
+    else:
+        tid=tid or -1
+    lee=lastEditEpoch or round(time.time(),2)
+    d={}
+    d['tid']=tid
+    d['TeamName']=name
+    d['Resource']=resource
+    d['LastEditEpoch']=lee
+    if status: # use the default status unless specified
+        d['TeamStatus']=status
+    qInsert('Teams',d)
+    r=q('SELECT * FROM Teams ORDER BY n DESC LIMIT 1;')
+    if not status: # don't add local history entry if called from tdbProcessSync; history is synced
+        tdbAddHistoryEntry("Team "+name+" Created",tid=r[0]["tid"],recordedBy='SYSTEM')
     validate=r[0]
-    # wsSend(json.dumps(validate))
     tdbPushTables()
     return {'validate':validate}
 
-def tdbNewAssignment(name,intendedResource):
-    # createAssignmentsTableIfNeeded()
-    qInsert('Assignments',{'AssignmentName':name,'IntendedResource':intendedResource,'LastEditEpoch':round(time.time(),2)})
-    r=q('SELECT * FROM Assignments ORDER BY AssignmentID DESC LIMIT 1;')
-    tdbAddHistoryEntry("Assignment "+name+" Created",assignmentID=r[0]["AssignmentID"],recordedBy='SYSTEM')
+def tdbNewAssignment(name,intendedResource,status=None,aid=None,lastEditEpoch=None):
+    # status, aid, and lastEditEpoch arguments will only exist if this is being called from tdbProcessSync
+    if host:
+        global nextAid
+        aid=nextAid
+        nextAid+=1
+    else:
+        aid=aid or -1
+    lee=lastEditEpoch or round(time.time(),2)
+    d={}
+    d['aid']=aid
+    d['AssignmentName']=name
+    d['IntendedResource']=intendedResource
+    d['LastEditEpoch']=lee
+    if status: # use the default status unless specified
+        d['AssignmentStatus']=status
+    qInsert('Assignments',d)
+    r=q('SELECT * FROM Assignments ORDER BY n DESC LIMIT 1;')
+    if not status: # don't add local history entry if called from tdbProcessSync; history is synced
+        tdbAddHistoryEntry("Assignment "+name+" Created",aid=r[0]["aid"],recordedBy='SYSTEM')
     validate=r[0]
     tdbPushTables()
     return {'validate':validate}
+
+def tdbNewPairing(aid,tid):
+    if host:
+        global nextPid
+        pid=nextPid
+        nextPid+=1
+    else:
+        pid=-1
+    tdbSetTeamStatusByID(tid,'ASSIGNED',push=False) # don't push tables yet
+    tdbSetAssignmentStatusByID(aid,'ASSIGNED',push=False) # don't push tables yet
+    assignmentName=tdbGetAssignmentNameByID(aid)
+    teamName=tdbGetTeamNameByID(tid)
+    tdbAddHistoryEntry("Pairing Created: Assignment "+assignmentName+" <=> Team "+teamName,aid=aid,tid=tid,recordedBy='SYSTEM')
+    qInsert('Pairings',{'pid':pid,'aid':aid,'tid':tid,'LastEditEpoch':round(time.time(),2)})
+    r=q('SELECT * FROM Pairings ORDER BY n DESC LIMIT 1;')
+    validate=r[0]
+    tdbPushTables()
+    return {'validate':validate}
+
+def tdbNewTeamFinalize(n,tid,lastEditEpoch):
+    q("UPDATE 'Teams' SET tid = '"+str(tid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
+
+def tdbNewAssignmentFinalize(n,aid,lastEditEpoch):
+    q("UPDATE 'Assignments' SET aid = '"+str(aid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
+
+def tdbNewPairingFinalize(n,pid,lastEditEpoch):
+    q("UPDATE 'Pairings' SET pid = '"+str(pid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
 
 # tdbHome - return a welcome message to verify that this code is running
 def tdbHome():
@@ -250,17 +324,17 @@ def tdbHome():
 
 # team getters
 def tdbGetTeamIDByName(teamName):
-    query="SELECT TeamID FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
+    query="SELECT tid FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
     # print("query:"+query)
     r=q(query)
     # print("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
-        return r[0].get("TeamID",None)
+        return r[0].get("tid",None)
     else:
         return None
 
-def tdbGetTeamNameByID(teamID):
-    query="SELECT TeamName FROM 'Teams' WHERE TeamID='"+str(teamID)+"';"
+def tdbGetTeamNameByID(tid):
+    query="SELECT TeamName FROM 'Teams' WHERE tid='"+str(tid)+"';"
     # print("query:"+query)
     r=q(query)
     # print("response:"+str(r))
@@ -291,8 +365,8 @@ def tdbGetTeamResourceByName(teamName):
 
 
 # assignment getters
-def tdbGetAssignmentNameByID(assignmentID):
-    query="SELECT AssignmentName FROM 'Assignments' WHERE AssignmentID='"+str(assignmentID)+"';"
+def tdbGetAssignmentNameByID(aid):
+    query="SELECT AssignmentName FROM 'Assignments' WHERE aid='"+str(aid)+"';"
     # print("query:"+query)
     r=q(query)
     # print("response:"+str(r))
@@ -302,12 +376,12 @@ def tdbGetAssignmentNameByID(assignmentID):
         return None
 
 def tdbGetAssignmentIDByName(assignmentName):
-    query="SELECT AssignmentID FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
+    query="SELECT aid FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
     # print("query:"+query)
     r=q(query)
     # print("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
-        return r[0].get("AssignmentID",None)
+        return r[0].get("aid",None)
     else:
         return None
 
@@ -332,9 +406,9 @@ def tdbGetAssignmentIntendedResourceByName(assignmentName):
         return None
 
 
-def tdbGetTeams(teamID=None,since=None):
-    if teamID:
-        condition='TeamID='+str(teamID)
+def tdbGetTeams(tid=None,since=None):
+    if tid:
+        condition='tid='+str(tid)
         if since:
             condition+=' AND LastEditEpoch > '+str(since)
     elif since:
@@ -353,12 +427,12 @@ def tdbGetTeamsView():
     tdbTeams=tdbGetTeams()
     tdbPairings=tdbGetPairings()
     for entry in tdbTeams:
-        id=entry['TeamID']
-        pairings=[x for x in tdbPairings if x['TeamID']==id] # pairings that include this team
+        tid=entry['tid']
+        pairings=[x for x in tdbPairings if x['tid']==tid] # pairings that include this team
         currentPairings=[x for x in pairings if x['PairingStatus']=='CURRENT']
         previousPairings=[x for x in pairings if x['PairingStatus']=='PREVIOUS']
-        currentAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in currentPairings]
-        previousAssignments=[tdbGetAssignmentNameByID(x["AssignmentID"]) for x in previousPairings]
+        currentAssignments=[tdbGetAssignmentNameByID(x['aid']) for x in currentPairings]
+        previousAssignments=[tdbGetAssignmentNameByID(x['aid']) for x in previousPairings]
         # Logger.info('Assignments for '+str(entry['TeamName'])+':'+str(assignments))
         teamsList.append([
             entry['TeamName'],
@@ -395,9 +469,9 @@ def tdbPushTables(teamsViewList=None,assignmentsViewList=None):
         wsSend(json.dumps(d))
     return(d)
 
-def tdbGetAssignments(assignmentID=None,since=None):
-    if assignmentID:
-        condition='AssignmentID='+str(assignmentID)
+def tdbGetAssignments(aid=None,since=None):
+    if aid:
+        condition='aid='+str(aid)
         if since:
             condition+=' AND LastEditEpoch > '+str(since)
     elif since:
@@ -415,18 +489,18 @@ def tdbGetAssignmentsView():
     tdbAssignments=tdbGetAssignments()
     tdbPairings=tdbGetPairings()
     for entry in tdbAssignments:
-        id=entry['AssignmentID']
+        aid=entry['aid']
         assignmentName=entry['AssignmentName']
         assignmentStatus=entry['AssignmentStatus']
         previous=[]
         current=[]
-        pairings=[x for x in tdbPairings if x['AssignmentID']==id] # pairings that include this assignment
+        pairings=[x for x in tdbPairings if x['aid']==aid] # pairings that include this assignment
         if pairings:
             for pairing in pairings:
                 if pairing['PairingStatus']=='PREVIOUS':
-                    previous.append(tdbGetTeamNameByID(pairing["TeamID"]))
+                    previous.append(tdbGetTeamNameByID(pairing['tid']))
                 else:
-                    current.append(tdbGetTeamNameByID(pairing["TeamID"]))
+                    current.append(tdbGetTeamNameByID(pairing['tid']))
         else:
             assignmentsList.append([assignmentName,'--',assignmentStatus,tdbGetAssignmentIntendedResourceByName(assignmentName)])
         for teamName in current:
@@ -436,9 +510,9 @@ def tdbGetAssignmentsView():
     assignmentsList+=previousAssignments # list completed assignments at the end, until a separate list display is arranged
     return assignmentsList
     
-def tdbGetPairings(pairingID=None,since=None):
-    if pairingID:
-        condition='PairingID='+str(pairingID)
+def tdbGetPairings(pid=None,since=None):
+    if pid:
+        condition='pid='+str(pid)
         if since:
             condition+=' AND LastEditEpoch > '+str(since)
     elif since:
@@ -448,43 +522,43 @@ def tdbGetPairings(pairingID=None,since=None):
     return q("SELECT * FROM 'Pairings' WHERE {condition};".format(
             condition=condition))
 
-def tdbGetPairingsByAssignment(assignmentID,currentOnly=False):
-    condition='AssignmentID='+str(assignmentID)
+def tdbGetPairingsByAssignment(aid,currentOnly=False):
+    condition='aid='+str(aid)
     if currentOnly:
         condition+=" AND PairingStatus='CURRENT'"
     return q("SELECT * FROM 'Pairings' WHERE {condition};".format(condition=condition))
 
 def tdbGetPairingIDByNames(assignmentName,teamName):
-    assignmentID=tdbGetAssignmentIDByName(assignmentName)
-    teamID=tdbGetTeamIDByName(teamName)
-    condition='AssignmentID='+str(assignmentID)+' AND TeamID='+str(teamID)
-    query="SELECT PairingID FROM 'Pairings' WHERE {condition};".format(condition=condition)
-    return q(query)[0].get('PairingID',None)
+    aid=tdbGetAssignmentIDByName(assignmentName)
+    tid=tdbGetTeamIDByName(teamName)
+    condition='aid='+str(aid)+' AND tid='+str(tid)
+    query="SELECT pid FROM 'Pairings' WHERE {condition};".format(condition=condition)
+    return q(query)[0].get('pid',None)
 
-def tdbSetPairingStatusByID(pairingID,status):
+def tdbSetPairingStatusByID(pid,status):
     if status=='PREVIOUS': # set team and assignment statuses but don't push tables yet
-        pairing=tdbGetPairings(pairingID)[0]
-        teamID=pairing.get("TeamID",None)
-        assignmentID=pairing.get("AssignmentID",None)
-        tdbSetTeamStatusByID(teamID,'UNASSIGNED',push=False)
-        tdbSetAssignmentStatusByID(assignmentID,'COMPLETED',push=False)
+        pairing=tdbGetPairings(pid)[0]
+        tid=pairing.get('tid',None)
+        aid=pairing.get('aid',None)
+        tdbSetTeamStatusByID(tid,'UNASSIGNED',push=False)
+        tdbSetAssignmentStatusByID(aid,'COMPLETED',push=False)
     # what history entries if any should happen here?
-    q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE PairingID = '"+str(pairingID)+"';")
-    r=q("SELECT * FROM 'Pairings' WHERE PairingID = "+str(pairingID)+";")
+    q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE pid = '"+str(pid)+"';")
+    r=q("SELECT * FROM 'Pairings' WHERE pid = "+str(pid)+";")
     if r:
-        tdbUpdateLastEditEpoch(pairingID=pairingID)
+        tdbUpdateLastEditEpoch(pid=pid)
         validate=r[0]
         tdbPushTables()
         return {'validate':validate}
     else:
         return {'error':'Query did not return a value'}
     
-def tdbSetTeamStatusByID(teamID,status,push=True):
-    tdbAddHistoryEntry('Status changed to '+status,teamID=teamID,recordedBy='SYSTEM')
-    q("UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamID = '"+str(teamID)+"';")
-    r=q("SELECT * FROM 'Teams' WHERE TeamID = "+str(teamID)+";")
+def tdbSetTeamStatusByID(tid,status,push=True):
+    tdbAddHistoryEntry('Status changed to '+status,tid=tid,recordedBy='SYSTEM')
+    q("UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE tid = '"+str(tid)+"';")
+    r=q("SELECT * FROM 'Teams' WHERE tid = "+str(tid)+";")
     if r:
-        tdbUpdateLastEditEpoch(pairingID=pairingID)
+        tdbUpdateLastEditEpoch(tid=tid)
         validate=r[0]
         if push:
             tdbPushTables()
@@ -493,24 +567,15 @@ def tdbSetTeamStatusByID(teamID,status,push=True):
         return {'error':'Query did not return a value'}
 
 def tdbSetTeamStatusByName(teamName,status,push=True):
-    tdbAddHistoryEntry('Status changed to '+status,teamID=tdbGetTeamIDByName(teamName),recordedBy='SYSTEM')
-    query="UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE TeamName = '"+str(teamName)+"';"
-    r=q(query)
-    if r:
-        tdbUpdateLastEditEpoch(pairingID=pairingID)
-        validate=r[0]
-        if push:
-            tdbPushTables()
-        return {'validate':validate}
-    else:
-        return {'error':'Query did not return a value'}
+    tid=tdbGetTeamIDByName(teamName)
+    tdbSetTeamStatusByID(tid,status,push)
 
-def tdbSetAssignmentStatusByID(assignmentID,status,push=True):
-    tdbAddHistoryEntry('Status changed to '+status,assignmentID=assignmentID,recordedBy='SYSTEM')
-    q("UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE AssignmentID = '"+str(assignmentID)+"';")
-    r=q("SELECT * FROM 'Assignments' WHERE AssignmentID = "+str(assignmentID)+";")
+def tdbSetAssignmentStatusByID(aid,status,push=True):
+    tdbAddHistoryEntry('Status changed to '+status,aid=aid,recordedBy='SYSTEM')
+    q("UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE aid = '"+str(aid)+"';")
+    r=q("SELECT * FROM 'Assignments' WHERE aid = "+str(aid)+";")
     if r:
-        tdbUpdateLastEditEpoch(pairingID=pairingID)
+        tdbUpdateLastEditEpoch(aid=aid)
         validate=r[0]
         if push:
             tdbPushTables()
@@ -519,83 +584,58 @@ def tdbSetAssignmentStatusByID(assignmentID,status,push=True):
         return {'error':'Query did not return a value'}
 
 def tdbSetAssignmentStatusByName(assignmentName,status,push=True):
-    query="UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE AssignmentName = '"+str(assignmentName)+"';"
-    r=q(query)
-    if r:
-        tdbUpdateLastEditEpoch(pairingID=pairingID)
-        validate=r[0]
-        if push:
-            tdbPushTables()
-        return {'validate':validate}
-    else:
-        return {'error':'Query did not return a value'}
+    aid=tdbGetAssignmentIDByName(assignmentName)
+    tdbSetAssignmentStatusByID(aid,status,push)
 
-def tdbPair(assignmentID,teamID):
-    # query="UPDATE 'Teams' SET CurrentAssignments = "+str(assignmentID)+" WHERE TeamID="+str(teamID)+";"
-    # query="UPDATE 'Pairings' SET TeamID = "+str(teamID)+" WHERE AssignmentID = "+str(assignmentID)+";"
-    # query="INSERT INTO 'Pairings' (AssignmentID,TeamID) VALUES("+str(assignmentID)+","+str(teamID)+");"
-    # return q(query)
-    tdbSetTeamStatusByID(teamID,'ASSIGNED',push=False) # don't push tables yet
-    tdbSetAssignmentStatusByID(assignmentID,'ASSIGNED',push=False) # don't push tables yet
-    assignmentName=tdbGetAssignmentNameByID(assignmentID)
-    teamName=tdbGetTeamNameByID(teamID)
-    tdbAddHistoryEntry("Pairing Created: Assignment "+assignmentName+" <=> Team "+teamName,assignmentID=assignmentID,teamID=teamID,recordedBy='SYSTEM')
-    qInsert('Pairings',{'AssignmentID':assignmentID,'TeamID':teamID,'LastEditEpoch':round(time.time(),2)})
-    r=q('SELECT * FROM Pairings ORDER BY PairingID DESC LIMIT 1;')
-    validate=r[0]
-    tdbPushTables()
-    return {'validate':validate}
-
-def tdbUpdateLastEditEpoch(teamID=None,assignmentID=None,pairingID=None):
-    if not teamID and not assignmentID and not pairingID:
+def tdbUpdateLastEditEpoch(tid=None,aid=None,pid=None):
+    if not tid and not aid and not pid:
         print("tdbUpdateLastEditEpoch called with no arguments; nothing to do")
         return
     t=round(time.time(),2)
-    if teamID:
-        query="UPDATE 'Teams' SET LastEditEpoch = "+str(t)+" WHERE TeamID="+str(teamID)+";"
+    if tid:
+        query="UPDATE 'Teams' SET LastEditEpoch = "+str(t)+" WHERE tid="+str(tid)+";"
         q(query)
-    if assignmentID:
-        query="UPDATE 'Assignments' SET LastEditEpoch = "+str(t)+" WHERE AssignmentID="+str(assignmentID)+";"
+    if aid:
+        query="UPDATE 'Assignments' SET LastEditEpoch = "+str(t)+" WHERE aid="+str(aid)+";"
         q(query)
-    if pairingID:
-        query="UPDATE 'Pairings' SET LastEditEpoch = "+str(t)+" WHERE PairingID="+str(pairingID)+";"
+    if pid:
+        query="UPDATE 'Pairings' SET LastEditEpoch = "+str(t)+" WHERE pid="+str(pid)+";"
         q(query)
 
-def tdbAddHistoryEntry(entry,assignmentID=-1,teamID=-1,recordedBy='N/A'):
+def tdbAddHistoryEntry(entry,aid=-1,tid=-1,recordedBy='N/A'):
     qInsert('History',{
-        "AssignmentID":assignmentID,
-        "TeamID":teamID,
-        "Entry":entry,
-        "RecordedBy":recordedBy,
-        "Epoch":round(time.time())})
+        'aid':aid,
+        'tid':tid,
+        'Entry':entry,
+        'RecordedBy':recordedBy,
+        'Epoch':round(time.time())})
 
-def tdbGetPairingIDsByID(pairingID=None):
-    r=tdbGetPairings(pairingID)
-    # print("pairingID r:"+str(r))
+def tdbGetPairingIDsByID(pid=None):
+    r=tdbGetPairings(pid)
     return True
 
 # tdbGetHistory with no arguments will return the entire history table
 # tdbGetHistory(since=123) will return all entries with Epoch greater than 123
-def tdbGetHistory(assignmentID=None,teamID=None,pairingID=None,useAnd=None,since=0):
+def tdbGetHistory(aid=None,tid=None,pid=None,useAnd=None,since=0):
     op='OR' # by default, return history entries that involve either the team or the assignment
     if useAnd:
         op='AND' # optionally return history entries that only affect the status of both team and assignment
-    if not assignmentID and not teamID and not pairingID:
+    if not aid and not tid and not pid:
         if since:
             condition='Epoch > '+str(since)
         else:
             condition='1'
     else:
-        if pairingID:
-            [teamID,assignmentID]=tdbGetPairingIDsByID(pairingID)
+        if pid:
+            [tid,aid]=tdbGetPairingIDsByID(pid)
             op='AND'
-        if assignmentID:
-            conditionA='AssignmentID='+str(assignmentID)
-        if teamID:
-            conditionT='TeamID='+str(teamID)
-        if assignmentID and teamID:
+        if aid:
+            conditionA='aid='+str(aid)
+        if tid:
+            conditionT='tid='+str(tid)
+        if aid and tid:
             condition=conditionA+' '+op+' '+conditionT
-        elif assignmentID:
+        elif aid:
             condition=conditionA
         else:
             condition=conditionT
@@ -605,91 +645,50 @@ def tdbGetHistory(assignmentID=None,teamID=None,pairingID=None,useAnd=None,since
             condition=condition)
     return q(query)
 
-# it's cleaner to let the host decide whether to add or to update;
-# if ID, Agency, Name, and InEpoch match those of an existing record,
-#  then update that record; otherwise, add a new record;
-# PUT seems like a better fit than POST based on the HTTP docs
-#  note: only store inEpoch to the nearest hundredth of a second since
-#  comparison beyond 5-digits-right-of-decimal has shown truncation differences
-
-# def sdbAddOrUpdate(eventID,d):
-# #     app.logger.info("put1")
-# #     app.logger.info("put called for event "+str(eventID))
-# #     if not request.json:
-# #         app.logger.info("no json")
-# #         return "<h1>400</h1><p>Request has no json payload.</p>", 400
-# #     if type(request.json) is str:
-# #         d=json.loads(request.json)
-# #     else: #kivy UrlRequest sends the dictionary itself
-# #         d=request.json
-
-# #     d['InEpoch']=round(d['InEpoch'],2)
-# #     d['OutEpocj']=round(d['OutEpoch'],2)
-
-#     # query builder from a dictionary that allows for different data types
-#     #  https://stackoverflow.com/a/54611514/3577105
-# #     colVal="({columns}) VALUES {values}".format(
-# #                 columns=', '.join(d.keys()),
-# #                 values=tuple(d.values())
-# #             )
-# #     colList="({columns})".format(
-# #                 columns=', '.join(d.keys()))
-# #     valList="{values}".format(
-# #                 values=tuple(d.values()))
-#     # 1. find any record(s) that should be modified
-#     tablename=str(eventID)+"_SignIn"
-#     condition="ID = '{id}' AND Name = '{name}' AND Agency = '{agency}' AND InEpoch = '{inEpoch}'".format(
-#             id=d['ID'],name=d['Name'],agency=d['Agency'],inEpoch=d['InEpoch'])
-#     query="SELECT * FROM '{tablename}' WHERE {condition};".format(
-#             tablename=tablename,condition=condition)
-# #     app.logger.info('query:'+query)
-#     r=q(query)
-# #     app.logger.info("result:"+str(r))
-#     if len(r)==0: # no results: this is a new sign-in; add a new record
-#         # query builder from a dictionary that allows for different data types
-#         #  https://stackoverflow.com/a/54611514/3577105
-# #         query="INSERT INTO {tablename} ({columns}) VALUES {values};" .format(
-# #                 tablename='SignIn',
-# #                 columns=', '.join(d.keys()),
-# #                 values=tuple(d.values())
-# #             )
-# #         query="INSERT INTO {tablename} {colList} VALUES {valList};".format(
-# #                 tablename='SignIn',
-# #                 colList=colList,
-# #                 valList=valList)
-# #         app.logger.info("query string: "+query)
-# #         q(query)
-#         qInsert(tablename,d)
-#         sdbUpdateLastEditEpoch(eventID)
-#     elif len(r)==1: # one result found; this is a sign-out, status udpate, etc; modify existing record
-#         # UPDATE .. SET () = () syntax is only supported for sqlite3 3.15.0 and up;
-#         #  pythonanywhere only has 3.11.0, so, use simpler queries instead
-# #       query="UPDATE {tablename} SET {colList} = {valList} WHERE {condition};".format(
-# #               tablename='SignIn',
-# #               colList=colList,
-# #               valList=valList,
-# #               condition=condition)
-#         query="UPDATE '{tablename}' SET ".format(tablename=tablename)
-#         for key in d.keys():
-#             query+="{col} = '{val}', ".format(
-#                 col=key,
-#                 val=d[key])
-#         query=query[:-2] # get rid of the final comma and space
-#         query+=" WHERE {condition};".format(condition=condition)
-# #         app.logger.info("query string: "+query)
-#         q(query)
-#         sdbUpdateLastEditEpoch(eventID)
-#     else:
-#         return {'error': 'more than one record in the host database matched the ID,Name,Agency,InEpoch values from the sign-in action'}, 405
-
-#     # now get the same record(s) from the local (host) db so the downstream tool can validate
-#     #  note that it should only return one record; the downstream tool should check
-#     validate=q("SELECT * FROM '{tablename}' WHERE {condition};".format(
-#             tablename=tablename,
-#             condition=condition))
-
-#     # in url request context, we want to return a full flask jsonify object and a response code
-#     #  but since we are not using flask here, just return a dictionary and a response code,
-#     #  and any downstream tool that needs to send json will have to jsonify the dictionary
-# #     return jsonify({'query': query,'validate': validate}), 200
-#     return {'query': query,'validate': validate}
+# tdbProcessSync - called from client sync success handler
+def tdbProcessSync(result):
+    requiredKeys=['Teams','Assignments','Pairings','History']
+    if not all(key in result.keys() for key in requiredKeys):
+        print("ERROR: sync result does not contain all required keys:"+str(requiredKeys))
+        return None
+    # if the new/updated host entry already exists local entry,
+    #  update the values of the local entry (e.g. status, resource, timestamp);
+    # otherwise, add it as a new local entry (a different client created it)
+    for e in result['Teams']:
+        # fields to update: TeamStatus, Resource, LastEditEpoch
+        #  (TeamName can never be changed)
+        setString="TeamStatus='"+str(e['TeamStatus'])+"'"
+        setString+=", Resource='"+str(e['Resource'])+"'"
+        setString+=', LastEditEpoch='+str(e['LastEditEpoch'])
+        query='UPDATE Teams SET '+setString+' WHERE tid='+str(e['tid'])+';'
+        # print('Teams sync query:'+query)
+        r=q(query) # return value is number of rows affected
+        if r==0:
+            tdbNewTeam(
+                    e['TeamName'],
+                    e['Resource'],
+                    teamStatus=e['TeamStatus'],
+                    tid=e['tid'],
+                    lastEditEpoch=e['LastEditEpoch'])
+    for e in result['Assignments']:
+        # fields to update: AssignmentStatus, IntendedResource, LastEditEpoch
+        #  (AssignmentName can never be changed)
+        setString="AssignmentStatus='"+str(e['AssignmentStatus'])+"'"
+        setString+=", IntendedResource='"+str(e['IntendedResource'])+"'"
+        setString+=', LastEditEpoch='+str(e['LastEditEpoch'])
+        query='UPDATE Assignments SET '+setString+' WHERE aid='+str(e['aid'])+';'
+        # print('Assignment sync query:'+query)
+        r=q(query) # return value is number of rows affected
+        if r==0:
+            tdbNewAssignment(
+                    e['AssignmentName'],
+                    e['IntendedResource'],
+                    assignmentStatus=e['AssignmentStatus'],
+                    aid=e['aid'],
+                    lastEditEpoch=e['LastEditEpoch'])
+    for e in result['Pairings']:
+        # fields to update: PairingStatus, LastEditEpoch
+        #  (tid, aid can never be changed)
+        pass
+    for e in result['History']:
+        pass
