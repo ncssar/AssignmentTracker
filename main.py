@@ -196,7 +196,9 @@ class assignmentTrackerApp(App):
         #   than on_start which runs before the main loop starts, meaning
         #   code during on_start happens with a frozen white GUI; but it also
         #   has a race condition - if you call it too soon, you get a crazy GUI)
-        Clock.schedule_once(self.startup,2)
+        
+        self.initPopup=self.textpopup(title='Please Wait',text='Initializing - please wait...',buttonText=None,size_hint=(0.9,0.3))
+        Clock.schedule_once(self.startup,1) # 0.5 was not enough, resulting in white GUI until startup completes
 
         return self.container
 
@@ -204,7 +206,6 @@ class assignmentTrackerApp(App):
         # perform startup tasks here that should take place after the GUI is alive:
         # - check for connections (cloud and LAN(s))
         Logger.info("startup called")
-        self.initPopup=self.textpopup(title='Please Wait',text='Checking connections...',size_hint=(0.9,0.3))
         self.getAPIKeys()
         self.check_connectivity()
         r=self.checkForLAN()
