@@ -459,17 +459,21 @@ class assignmentTrackerApp(App):
             self.callsignPool.remove(name)
         resource=resource or self.newTeamScreen.ids.resourceSpinner.text
         r=tdbNewTeam(name,resource)
-        # Logger.info('return from newTeam:')
-        # Logger.info(r)
-        self.newTeamN=r['validate']['n']
-        self.sendRequest("api/v1/teams/new","POST",{'TeamName':name,'Resource':resource},on_success=self.on_newTeam_success)
+        n=r['validate']['n']
+        # send n (local db index) with the request payload, so that the response handler will have access to it;
+        #   that way this specific n will be kept with this specific request, which prevents
+        #   race conditions that would result from setting a class variable to keep track of n then unsetting it
+        #   in the response handler (i.e. when multiple local objects are created before the first response)
+        self.sendRequest("api/v1/teams/new","POST",{'TeamName':name,'Resource':resource,'n':n},on_success=self.on_newTeam_success)
         self.updateNewTeamNameSpinner()
         self.buildLists()
 
     def on_newTeam_success(self,request,response):
+        rb=request.req_body
+        rbj=json.loads(rb)
+        n=rbj.get('n',None) # local db index
         v=response['validate']
-        tdbNewTeamFinalize(self.newTeamN,v['tid'],v['LastEditEpoch'])
-        self.newTeamN=None
+        tdbNewTeamFinalize(n,v['tid'],v['LastEditEpoch'])
 
     def newAssignment(self,name=None,intendedResource=None):
         name=name or self.assignmentNamePool.pop(0)
@@ -477,15 +481,21 @@ class assignmentTrackerApp(App):
             self.assignmentNamePool.remove(name)
         intendedResource=intendedResource or self.newAssignmentScreen.ids.resourceSpinner.text
         r=tdbNewAssignment(name,intendedResource)
-        self.newAssignmentN=r['validate']['n']
-        self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource},on_success=self.on_newAssignment_success)
+        n=r['validate']['n']
+        # send n (local db index) with the request payload, so that the response handler will have access to it;
+        #   that way this specific n will be kept with this specific request, which prevents
+        #   race conditions that would result from setting a class variable to keep track of n then unsetting it
+        #   in the response handler (i.e. when multiple local objects are created before the first response)
+        self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource,'n':n},on_success=self.on_newAssignment_success)
         self.updateNewAssignmentNameSpinner()
         self.buildLists()
 
     def on_newAssignment_success(self,request,response):
+        rb=request.req_body
+        rbj=json.loads(rb)
+        n=rbj.get('n',None) # local db index
         v=response['validate']
-        tdbNewAssignmentFinalize(self.newAssignmentN,v['aid'],v['LastEditEpoch'])
-        self.newAssignmentN=None
+        tdbNewAssignmentFinalize(n,v['aid'],v['LastEditEpoch'])
 
     def newPairing(self,assignmentName=None,teamName=None):
         if not assignmentName:
@@ -496,10 +506,11 @@ class assignmentTrackerApp(App):
         aid=tdbGetAssignmentIDByName(assignmentName)
         tid=tdbGetTeamIDByName(teamName)
         r=tdbNewPairing(aid,tid)
-        self.newPairingN=r['validate']['n']
+        n=r['validate']['n']
         tdbSetTeamStatusByName(teamName,'ASSIGNED')
         tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
-        self.sendRequest("api/v1/pairings/new","POST",{"aid":aid,"tid":tid},on_success=self.on_newPairing_success)
+        self.sendRequest('api/v1/pairings/new','POST',{'aid':aid,'tid':tid,'n':n},on_success=self.on_newPairing_success)
+        self.showAssignments() # close the new pairing dialog after creating the pairing; not likely to need to pair another team
         # avoid sending multiple requests back to back, since this can create race conditions
         #  and html flickers with clients receiving multiple different websocket messages
         #  in rapid succession; instead, make the new pairings API handler set the team
@@ -508,9 +519,11 @@ class assignmentTrackerApp(App):
         # self.sendRequest("api/v1/assignments/"+str(aid)+"/status","PUT",{"NewStatus":"ASSIGNED"})
 
     def on_newPairing_success(self,request,response):
+        rb=request.req_body
+        rbj=json.loads(rb)
+        n=rbj.get('n',None) # local db index
         v=response['validate']
-        tdbNewPairingFinalize(self.newPairingN,v['pid'],v['LastEditEpoch'])
-        self.newPairingN=None
+        tdbNewPairingFinalize(n,v['pid'],v['LastEditEpoch'])
 
     def updateNewTeamNameSpinner(self):
         self.newTeamScreen.ids.nameSpinner.values=self.callsignPool[0:8]
@@ -523,8 +536,6 @@ class assignmentTrackerApp(App):
     def buildLists(self):
         self.teamsList=tdbGetTeamsView()
         self.assignmentsList=tdbGetAssignmentsView()
-        # Logger.info("teamsList:"+str(self.teamsList))
-        # Logger.info("assignmentsList:"+str(self.assignmentsList))
         self.updateCounts()
 
     def showTeams(self,*args):
@@ -575,12 +586,25 @@ class assignmentTrackerApp(App):
     def showPairingDetail(self,assignmentName,teamName=None):
         Logger.info('showPairingDetail called:'+str(assignmentName)+' : '+str(teamName))
         if teamName:
-            status=tdbGetTeamStatusByName(teamName)
+            pid=tdbGetPairingIDByNames(assignmentName,teamName)
+            status=tdbGetPairings(pid)[0].get('PairingStatus',None)
+            teamResource=tdbGetTeamResourceByName(teamName)
+            if status=='CURRENT':
+                status=tdbGetTeamStatusByName(teamName)
+                self.pairingDetailScreen.ids.statusBox.visible=True
+            else:
+                status='COMPLETED'
+                self.pairingDetailScreen.ids.statusBox.visible=False
+            self.pairingDetailScreen.ids.pairButton.text='Assign another team to this assignment'
         else:
             teamName='--'
+            teamResource=''
             status='UNASSIGNED'
+            self.pairingDetailScreen.ids.statusBox.visible=False
+            self.pairingDetailScreen.ids.pairButton.text='Assign a team to this assignment'
         self.pairingDetailScreen.ids.assignmentNameLabel.text=assignmentName
         self.pairingDetailScreen.ids.teamNameLabel.text=teamName
+        self.pairingDetailScreen.ids.teamResourceLabel.text=teamResource
         self.pairingDetailScreen.ids.statusLabel.text=status
         self.pairingDetailBeingShown=[assignmentName,teamName]
         self.pairingDetailStatusUpdate()
@@ -624,28 +648,36 @@ class assignmentTrackerApp(App):
 
     def showNewPairing(self,assignmentName):
         Logger.info('showPairing called: '+str(assignmentName))
+        self.newPairingScreen.ids.assignmentNameLabel.text=assignmentName
         intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
-        label=assignmentName+' : '+intendedResource
+        self.newPairingScreen.ids.intendedResourceLabel.text=intendedResource
         status=tdbGetAssignmentStatusByName(assignmentName)
-        if status=='UNASSIGNED':
-            label=label+'\n'+status
-        else:
-            label=label+'\nASSIGNED TO team(s)'
-        self.newPairingScreen.ids.changePairingLabel.text=label
+        if status not in ['UNASSIGNED','COMPLETED']:
+            status='ASSIGNED TO team(s):\n'
+            pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
+            Logger.info('  pairings:'+str(pairings))
+            tids=[pairing.get('tid',None) for pairing in pairings]
+            Logger.info('  tids:'+str(tids))
+            teamNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
+            Logger.info('  teamNames:'+str(teamNames))
+            status+=','.join(teamNames)
+        self.newPairingScreen.ids.currentlyLabel.text=status
+        # Logger.info("teamsList:"+str(self.teamsList))
         part1=[] # unassigned teams, same resource type as intended resource
         part2=[] # unassigned teams, other resource types
         part3=[] # assigned teams, same resource type as intended resource
         part4=[] # assigned teams, other resource types
         for team in self.teamsList:
-            if team[1]=='UNASSIGNED':
-                entryText=team[0]+' : '+team[2]+'   '+team[1]
-                if team[2]==intendedResource:
+            entryText=team[0]+' : '+team[3]
+            if team[2]=='UNASSIGNED':
+                entryText+=' : UNASSIGNED'
+                if team[3]==intendedResource:
                     part1.append(entryText)
                 else:
                     part2.append(entryText)
             else:
-                entryText=team[0]+' : '+team[2]+'  ASSIGNED to '+team[3]
-                if team[2]==intendedResource:
+                entryText+=' : ASSIGNED to '+team[1]
+                if team[3]==intendedResource:
                     part3.append(entryText)
                 else:
                     part4.append(entryText)

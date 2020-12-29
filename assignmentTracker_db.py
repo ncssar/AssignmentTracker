@@ -126,11 +126,17 @@ def q(query,params=None):
     cur = conn.cursor()
     # fetchall if params is blank seems to only return a tuple, not a dict
     
-    if params is not None:
-        r=cur.execute(query,params).fetchall()
-    else:
-        r=cur.execute(query).fetchall()
-    conn.commit()
+    try:
+        if params is not None:
+            r=cur.execute(query,params).fetchall()
+        else:
+            r=cur.execute(query).fetchall()
+        conn.commit()
+    except:
+        print("ERROR during SQL query:")
+        print("  query='"+str(query)+"'")
+        print("  params='"+str(params)+"'")
+        return None
     # for update requests, return the number of rows affected
     if query.lower().startswith('update'):
         return cur.rowcount
@@ -308,12 +314,15 @@ def tdbNewPairing(aid,tid):
     return {'validate':validate}
 
 def tdbNewTeamFinalize(n,tid,lastEditEpoch):
+    # print("New team finalize:"+str(n)+"="+str(tid))
     q("UPDATE 'Teams' SET tid = '"+str(tid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
 
 def tdbNewAssignmentFinalize(n,aid,lastEditEpoch):
+    # print("New assignment finalize:"+str(n)+"="+str(aid))
     q("UPDATE 'Assignments' SET aid = '"+str(aid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
 
 def tdbNewPairingFinalize(n,pid,lastEditEpoch):
+    # print("New pairing finalize:"+str(n)+"="+str(pid))
     q("UPDATE 'Pairings' SET pid = '"+str(pid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
 
 # tdbHome - return a welcome message to verify that this code is running
@@ -667,7 +676,7 @@ def tdbProcessSync(result):
             tdbNewTeam(
                     e['TeamName'],
                     e['Resource'],
-                    teamStatus=e['TeamStatus'],
+                    status=e['TeamStatus'],
                     tid=e['tid'],
                     lastEditEpoch=e['LastEditEpoch'])
     for e in result['Assignments']:
@@ -683,7 +692,7 @@ def tdbProcessSync(result):
             tdbNewAssignment(
                     e['AssignmentName'],
                     e['IntendedResource'],
-                    assignmentStatus=e['AssignmentStatus'],
+                    status=e['AssignmentStatus'],
                     aid=e['aid'],
                     lastEditEpoch=e['LastEditEpoch'])
     for e in result['Pairings']:

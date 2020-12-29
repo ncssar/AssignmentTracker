@@ -288,6 +288,27 @@
                     height: self.minimum_height
                     multiselect: False
 
+# from https://kivy.org/doc/stable/api-kivy.uix.label.html
+# Define your background color Template
+<BackgroundColor@Widget>:
+    background_color: 1, 1, 1, 1
+    canvas.before:
+        Color:
+            rgba: root.background_color
+        Rectangle:
+            size: self.size
+            pos: self.pos
+# Now you can simply Mix the `BackgroundColor` class with almost
+# any other widget... to give it a background.
+<BackgroundLabel@Label+BackgroundColor>:
+    background_color: 0, 0, 0, 0
+    # Default the background color for this label
+    # to r 0, g 0, b 0, a 0
+# Use the BackgroundLabel any where in your kv code like below
+# BackgroundLabel
+#     text: 'Hello'
+#     background_color: 1, 0, 0, 1
+
 <PairingDetailScreen>:
     BoxLayout:
         orientation: 'vertical'
@@ -295,56 +316,82 @@
             orientation: 'horizontal'
             BoxLayout:
                 orientation: 'vertical'
-                Label:
+                BackgroundLabel:
                     id: assignmentNameLabel
                     text: '--'
-                    font_size: 60
-                Label:
+                    font_size: 70
+                    size_hint_y: 0.55
+                BackgroundLabel:
+                    id: intendedResourceLabel
+                    text: ''
+                    font_size: 15
+                    size_hint_y: 0.15
+                BackgroundLabel:
                     text: 'Assignment'
                     font_size: 20
+                    size_hint_y: 0.3
             BoxLayout:
                 orientation: 'vertical'
-                Label:
+                BackgroundLabel:
                     id: teamNameLabel
                     text: '--'
-                    font_size: 60
-                Label:
+                    font_size: 70
+                    size_hint_y: 0.55
+                BackgroundLabel:
+                    id: teamResourceLabel
+                    text: ''
+                    font_size: 15
+                    size_hint_y: 0.15
+                BackgroundLabel:
                     text: 'Team'
                     font_size: 20
+                    size_hint_y: 0.3
         Label:
             id: statusLabel
             text: 'STATUS'
             font_size: 30
-        # BoxLayout:
-        #     id: assignmentDetailPreviousBox
-        #     RecycleView:
-        #         viewclass: 'SelectableLabel'
-        #         id: assignmentDetailPreviousRV
-        #         data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentDetailPreviousRVList]
-        #         SelectableRecycleGridLayout:
-        #             id: assignmentDetailPreviousLayout
-        #             cols: 3
-        #             size_hint_y: None
-        #             default_size: None, dp(32)
-        #             default_size_hint: 1, None
-        #             height: self.minimum_height
-        #             orientation: 'vertical'
-        #             multiselect: False
         BoxLayout:
-            orientation: 'horizontal'
-            Label:
-                text: 'Change Status to'
-            Spinner:
-                id: statusSpinner
-                text: 'A'
-                values: ['A','B','C']
-            Button:
-                size_hint_x: 0.2
-                text: 'Apply'
-                on_press: app.changeTeamStatus()
-        Button:
-            text: 'Assign a team to this assignment'
-            on_press: app.showNewPairing(app.pairingDetailBeingShown[0])
+            orientation: 'vertical'
+            BoxLayout:
+                orientation: 'horizontal'
+                id: statusBox
+                visible: True
+                disabled: not self.visible
+                size_hint_y: 1.2 if self.visible else 0
+                opacity: 1 if self.visible else 0
+                Label:
+                    text: 'Change Status to'
+                Spinner:
+                    id: statusSpinner
+                    text: 'A'
+                    values: ['A','B','C']
+                Button:
+                    text: 'Apply'
+                    on_press: app.changeTeamStatus()
+            BoxLayout:
+                orientation: 'horizontal'
+                id: pairBox
+                Button:
+                    id: pairButton
+                    text: 'Assign a team to this assignment'
+                    on_press: app.showNewPairing(app.pairingDetailBeingShown[0])
+            # BoxLayout:
+            #     orientation: 'horizontal'
+            #     id: newPairingBox
+            #     visible: False
+            #     disabled: not self.visible
+            #     size_hint_y: 1 if self.visible else 0
+            #     opacity: 1 of self.visible else 0
+            #     Label:
+            #         text: 'Assign to:'
+            #         size_hint_x: 0.3
+            #     Spinner:
+            #         markup: True
+            #         size_hint_x: 0.7
+            #         halign: 'left'
+            #         id: teamSpinner
+            #         text: '101'
+            #         values: ['101','102']
         Label:
             text: 'Activity Log'
         RecycleView:
@@ -432,20 +479,60 @@
     BoxLayout:
         orientation: 'vertical'
         Label:
-            id: changePairingLabel
-            text: 'N/A'
-        Spinner:
+            text: 'Create New Pairing'
+            font_size: 50
             size_hint_y: 0.1
-            markup: True
-            halign: 'left'
-            id: teamSpinner
-            text: '101'
-            values: ['101','102']
-        Button:
-            text: 'Apply'
+        BoxLayout:
+            orientation: 'horizontal'
+            id: assignmentBox
             size_hint_y: 0.2
+            Label:
+                size_hint_x: 0.4
+                text: 'Assignment:'
+            Label:
+                id: assignmentNameLabel
+                text: '--'
+                font_size: 60
+        BoxLayout:
+            orientation: 'horizontal'
+            id: intendedResourceBox
+            size_hint_y: 0.15
+            Label:
+                size_hint_x: 0.4
+                text: 'Intended Resource:'
+            Label:
+                id: intendedResourceLabel
+                text: ''
+                font_size: 30
+        BoxLayout:
+            orientation: 'horizontal'
+            id: currentlyBox
+            size_hint_y: 0.15
+            Label:
+                size_hint_x: 0.4
+                text: 'Currently:'
+            Label:
+                id: currentlyLabel
+                text: ''
+                font_size: 30
+        BoxLayout:
+            orientation: 'horizontal'
+            id: teamBox
+            size_hint_y: 0.2
+            Label:
+                size_hint_x: 0.4
+                text: 'Assign to:'
+            Spinner:
+                markup: True
+                halign: 'left'
+                id: teamSpinner
+                text: '101'
+                values: ['101','102']
+        Button:
+            text: 'OK'
+            size_hint_y: 0.1
             on_press: app.newPairing()
         Button:
             size_hint_y: 0.1
-            text: 'Close'
+            text: 'Cancel'
             on_press: app.showAssignments()
