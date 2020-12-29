@@ -595,11 +595,14 @@ class assignmentTrackerApp(App):
             else:
                 status='COMPLETED'
                 self.pairingDetailScreen.ids.statusBox.visible=False
+            self.pairingDetailScreen.ids.intendedResourceLabel.text=''
             self.pairingDetailScreen.ids.pairButton.text='Assign another team to this assignment'
         else:
             teamName='--'
             teamResource=''
             status='UNASSIGNED'
+            intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
+            self.pairingDetailScreen.ids.intendedResourceLabel.text='Intended for: '+intendedResource
             self.pairingDetailScreen.ids.statusBox.visible=False
             self.pairingDetailScreen.ids.pairButton.text='Assign a team to this assignment'
         self.pairingDetailScreen.ids.assignmentNameLabel.text=assignmentName
@@ -653,7 +656,7 @@ class assignmentTrackerApp(App):
         self.newPairingScreen.ids.intendedResourceLabel.text=intendedResource
         status=tdbGetAssignmentStatusByName(assignmentName)
         if status not in ['UNASSIGNED','COMPLETED']:
-            status='ASSIGNED TO team(s):\n'
+            status='ASSIGNED to team(s):\n'
             pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
             Logger.info('  pairings:'+str(pairings))
             tids=[pairing.get('tid',None) for pairing in pairings]
@@ -675,7 +678,7 @@ class assignmentTrackerApp(App):
                     part1.append(entryText)
                 else:
                     part2.append(entryText)
-            else:
+            elif assignmentName not in team[1].split(','): # don't list team(s) already paired to this assignment!
                 entryText+=' : ASSIGNED to '+team[1]
                 if team[3]==intendedResource:
                     part3.append(entryText)
@@ -685,9 +688,11 @@ class assignmentTrackerApp(App):
         self.newPairingScreen.ids.teamSpinner.values=theList
         if theList:
             self.newPairingScreen.ids.teamSpinner.text=theList[0]
+            self.newPairingScreen.ids.pairButton.disabled=False
         else:
             # could show a warning here and disallow pairing before the screen raises
-            self.newPairingScreen.ids.teamSpinner.text='No teams defined'
+            self.newPairingScreen.ids.teamSpinner.text='No teams available'
+            self.newPairingScreen.ids.pairButton.disabled=True
         self.sm.current='newPairingScreen'
 
     def changeTeamStatus(self,teamName=None,status=None):
@@ -701,18 +706,18 @@ class assignmentTrackerApp(App):
             pid=tdbGetPairingIDByNames(assignmentName,teamName)
             tdbSetPairingStatusByID(pid,'PREVIOUS')
             self.sendRequest("api/v1/pairings/"+str(pid)+"/status","PUT",{"NewStatus":"PREVIOUS"})
-            # 2. set team status to UNASSIGNED
+            # 2. set team status to UNASSIGNED if it is not in any current pairings
             tid=tdbGetTeamIDByName(teamName)
-            tdbSetTeamStatusByID(tid,'UNASSIGNED')
-            self.sendRequest("api/v1/teams/"+str(tid)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
-            # 3. if this was the only current pairing involving the paired assignment,
-            #  set that assignment's status to UNASSIGNED
-            others=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
-            Logger.info('others:'+str(others))
+            others=tdbGetPairingsByTeam(tid,currentOnly=True)
             if not others:
-                aid=tdbGetAssignmentIDByName(assignmentName)
-                tdbSetAssignmentStatusByID(aid,'UNASSIGNED')
-                self.sendRequest("api/v1/assignments/"+str(aid)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
+                tdbSetTeamStatusByID(tid,'UNASSIGNED')
+                self.sendRequest("api/v1/teams/"+str(tid)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
+            # 3. set assignment status to UNASSIGNED if it is not in any current pairings
+            aid=tdbGetAssignmentIDByName(assignmentName)
+            others=tdbGetPairingsByAssignment(aid,currentOnly=True)
+            if not others:
+                tdbSetAssignmentStatusByID(aid,'COMPLETED')
+                self.sendRequest("api/v1/assignments/"+str(aid)+"/status","PUT",{"NewStatus":"COMPLETED"})
             self.showAssignments()
         else:
             Logger.info('changing status for team '+str(teamName)+' to '+str(status))

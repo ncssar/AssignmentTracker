@@ -460,7 +460,7 @@
         BoxLayout:
             orientation: 'horizontal'
             Label:
-                text: 'Intended Resource Type:'
+                text: 'Intended Resource:'
             Spinner:
                 id: resourceSpinner
                 text: 'Ground Type 2'
@@ -499,7 +499,7 @@
             size_hint_y: 0.15
             Label:
                 size_hint_x: 0.4
-                text: 'Intended Resource:'
+                text: 'Intended for:'
             Label:
                 id: intendedResourceLabel
                 text: ''
@@ -530,6 +530,8 @@
                 values: ['101','102']
         Button:
             text: 'OK'
+            id: pairButton
+            disabled: False
             size_hint_y: 0.1
             on_press: app.newPairing()
         Button:

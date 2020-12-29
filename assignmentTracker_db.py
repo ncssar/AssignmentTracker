@@ -453,7 +453,11 @@ def tdbGetTeamsView():
     return teamsList
 
 # tdbUpdateTables can also be used to get the team and assignment counts
+#  but, can't use the assignments view since it's actually a list of
+#  pairings, and there may be more than one entry per assignment, so, 
+#  use other db functions to get the accurate count of assigned assignments
 def tdbPushTables(teamsViewList=None,assignmentsViewList=None):
+    assignments=tdbGetAssignments() # get all assignments - not pairings
     if not teamsViewList:
         teamsViewList=tdbGetTeamsView()
     if not assignmentsViewList: # completed assignments should be part of assignmentsViewList
@@ -462,9 +466,9 @@ def tdbPushTables(teamsViewList=None,assignmentsViewList=None):
     assignmentsViewCompletedList=[x for x in assignmentsViewList if x[2]=='COMPLETED']
     unassignedTeamsCount=len([x for x in teamsViewList if x[2]=='UNASSIGNED'])
     assignedTeamsCount=len(teamsViewList)-unassignedTeamsCount
-    unassignedAssignmentsCount=len([x for x in assignmentsViewList if x[2]=='UNASSIGNED'])
-    completedAssignmentsCount=len([x for x in assignmentsViewList if x[2]=='COMPLETED'])
-    assignedAssignmentsCount=len(assignmentsViewList)-unassignedAssignmentsCount-completedAssignmentsCount
+    unassignedAssignmentsCount=len([x for x in assignments if x['AssignmentStatus']=='UNASSIGNED'])
+    completedAssignmentsCount=len([x for x in assignments if x['AssignmentStatus']=='COMPLETED'])
+    assignedAssignmentsCount=len(assignments)-unassignedAssignmentsCount-completedAssignmentsCount
     d={
         "teamsView":teamsViewList,
         "assignmentsViewNotCompleted":assignmentsViewNotCompletedList,
@@ -531,6 +535,12 @@ def tdbGetPairings(pid=None,since=None):
     return q("SELECT * FROM 'Pairings' WHERE {condition};".format(
             condition=condition))
 
+def tdbGetPairingsByTeam(tid,currentOnly=False):
+    condition='tid='+str(tid)
+    if currentOnly:
+        condition+=" AND PairingStatus='CURRENT'"
+    return q("SELECT * FROM 'Pairings' WHERE {condition};".format(condition=condition))
+
 def tdbGetPairingsByAssignment(aid,currentOnly=False):
     condition='aid='+str(aid)
     if currentOnly:
@@ -545,12 +555,6 @@ def tdbGetPairingIDByNames(assignmentName,teamName):
     return q(query)[0].get('pid',None)
 
 def tdbSetPairingStatusByID(pid,status):
-    if status=='PREVIOUS': # set team and assignment statuses but don't push tables yet
-        pairing=tdbGetPairings(pid)[0]
-        tid=pairing.get('tid',None)
-        aid=pairing.get('aid',None)
-        tdbSetTeamStatusByID(tid,'UNASSIGNED',push=False)
-        tdbSetAssignmentStatusByID(aid,'COMPLETED',push=False)
     # what history entries if any should happen here?
     q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE pid = '"+str(pid)+"';")
     r=q("SELECT * FROM 'Pairings' WHERE pid = "+str(pid)+";")
