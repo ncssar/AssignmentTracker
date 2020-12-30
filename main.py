@@ -111,11 +111,11 @@ if platform in ('win'):
 # def utc_to_local(utc_dt,tz=None):
 #     return utc_dt.replace(tzinfo=timezone.utc).astimezone(tz=tz)
 
-# def toast(text):
-#     if platform in ('android'):
-#         PythonActivity.toastError(text)
-#     else:
-#         Logger.info("TOAST:"+text)
+def toast(text):
+    if platform in ('android'):
+        PythonActivity.toastError(text)
+    else:
+        Logger.info("TOAST:"+text)
 
 # NOTE regarding ID values:
 # tid = team ID; aid = assignment ID; pid = pairing ID
@@ -453,8 +453,8 @@ class assignmentTrackerApp(App):
     #     Logger.info("    request headers="+str(request.req_headers))
     #     Logger.info("  result="+str(result))
 
-    def newTeam(self,name=None,resource=None):
-        name=name or self.callsignPool.pop(0)
+    def newTeam(self,name=None,resource=None,doToast=True):
+        name=name or self.newTeamScreen.ids.nameSpinner.text
         if name in self.callsignPool:
             self.callsignPool.remove(name)
         resource=resource or self.newTeamScreen.ids.resourceSpinner.text
@@ -467,6 +467,9 @@ class assignmentTrackerApp(App):
         self.sendRequest("api/v1/teams/new","POST",{'TeamName':name,'Resource':resource,'n':n},on_success=self.on_newTeam_success)
         self.updateNewTeamNameSpinner()
         self.buildLists()
+        if doToast:
+            toast('Team '+str(name)+' ['+str(resource)+'] created')
+
 
     def on_newTeam_success(self,request,response):
         rb=request.req_body
@@ -475,8 +478,8 @@ class assignmentTrackerApp(App):
         v=response['validate']
         tdbNewTeamFinalize(n,v['tid'],v['LastEditEpoch'])
 
-    def newAssignment(self,name=None,intendedResource=None):
-        name=name or self.assignmentNamePool.pop(0)
+    def newAssignment(self,name=None,intendedResource=None,doToast=True):
+        name=name or self.newAssignmentScreen.ids.nameSpinner.text
         if name in self.assignmentNamePool:
             self.assignmentNamePool.remove(name)
         intendedResource=intendedResource or self.newAssignmentScreen.ids.resourceSpinner.text
@@ -489,6 +492,8 @@ class assignmentTrackerApp(App):
         self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource,'n':n},on_success=self.on_newAssignment_success)
         self.updateNewAssignmentNameSpinner()
         self.buildLists()
+        if doToast:
+            toast('Assignment '+str(name)+' ['+str(intendedResource)+'] created')
 
     def on_newAssignment_success(self,request,response):
         rb=request.req_body
@@ -498,6 +503,16 @@ class assignmentTrackerApp(App):
         tdbNewAssignmentFinalize(n,v['aid'],v['LastEditEpoch'])
 
     def newPairing(self,assignmentName=None,teamName=None):
+        # if this is a repeat (same assignmentName and teamName as
+        #  a previous pairing), don't make a new pairing, but instead
+        #  change the status of the existing pairing from COMPLETED to
+        #  CURRENT.  This will remove the completed pairing from the
+        #  completed section of the assignment / pairing view.  This
+        #  is hopefully less confusing than seeing the same names
+        #  in two different rows (once in each section), and it should
+        #  reflect reality just as well as keeping both rows.  Either
+        #  option would be a bit confusing; hopefully this option is
+        #  slightly less confusing.
         if not assignmentName:
             assignmentName=self.pairingDetailBeingShown[0]
         if not teamName:
@@ -505,11 +520,22 @@ class assignmentTrackerApp(App):
         Logger.info("pairing assignment "+str(assignmentName)+" with team "+str(teamName))
         aid=tdbGetAssignmentIDByName(assignmentName)
         tid=tdbGetTeamIDByName(teamName)
-        r=tdbNewPairing(aid,tid)
-        n=r['validate']['n']
-        tdbSetTeamStatusByName(teamName,'ASSIGNED')
-        tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
-        self.sendRequest('api/v1/pairings/new','POST',{'aid':aid,'tid':tid,'n':n},on_success=self.on_newPairing_success)
+        prevID=tdbGetPairingIDByNames(assignmentName,teamName,previousOnly=True)
+        Logger.info("Checking for previous pairings with same assignment and same team: "+str(prevID))
+        if prevID: # this is a repeat; reuse the existing ID rather than making a new pairing
+            tdbSetPairingStatusByID(prevID,'CURRENT')
+            self.sendRequest('api/v1/pairings/'+str(prevID)+'/status','PUT',{'NewStatus':'CURRENT'})
+            tdbSetTeamStatusByName(teamName,'ASSIGNED')
+            tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
+            # api call for a new pairing takes care of setting the team and assignment status
+            #  on the host, but we purposely are not making that call here, so we need to do
+            #  those api calls separately
+            self.sendRequest('api/v1/teams/'+str(tid)+'/status','PUT',{'NewStatus':'ASSIGNED'})
+            self.sendRequest('api/v1/assignments/'+str(aid)+'/status','PUT',{'NewStatus':'ASSIGNED','PushTables':'True'})
+        else:
+            r=tdbNewPairing(aid,tid) # also sets team and assignment to ASSIGNED
+            n=r['validate']['n']
+            self.sendRequest('api/v1/pairings/new','POST',{'aid':aid,'tid':tid,'n':n},on_success=self.on_newPairing_success)
         self.showAssignments() # close the new pairing dialog after creating the pairing; not likely to need to pair another team
         # avoid sending multiple requests back to back, since this can create race conditions
         #  and html flickers with clients receiving multiple different websocket messages
@@ -712,7 +738,7 @@ class assignmentTrackerApp(App):
             if not others:
                 tdbSetTeamStatusByID(tid,'UNASSIGNED')
                 self.sendRequest("api/v1/teams/"+str(tid)+"/status","PUT",{"NewStatus":"UNASSIGNED"})
-            # 3. set assignment status to UNASSIGNED if it is not in any current pairings
+            # 3. set assignment status to COMPLETED if it is not in any current pairings
             aid=tdbGetAssignmentIDByName(assignmentName)
             others=tdbGetPairingsByAssignment(aid,currentOnly=True)
             if not others:

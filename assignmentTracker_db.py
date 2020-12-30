@@ -547,14 +547,23 @@ def tdbGetPairingsByAssignment(aid,currentOnly=False):
         condition+=" AND PairingStatus='CURRENT'"
     return q("SELECT * FROM 'Pairings' WHERE {condition};".format(condition=condition))
 
-def tdbGetPairingIDByNames(assignmentName,teamName):
+def tdbGetPairingIDByNames(assignmentName,teamName,currentOnly=False,previousOnly=False):
     aid=tdbGetAssignmentIDByName(assignmentName)
     tid=tdbGetTeamIDByName(teamName)
     condition='aid='+str(aid)+' AND tid='+str(tid)
+    if currentOnly:
+        condition+=" AND PairingStatus='CURRENT'"
+    elif previousOnly:
+        condition+=" AND PairingStatus='PREVIOUS'"
     query="SELECT pid FROM 'Pairings' WHERE {condition};".format(condition=condition)
-    return q(query)[0].get('pid',None)
+    r=q(query)
+    if type(r) is list and len(r)>0:
+        return q(query)[0].get('pid',None)
+    else:
+        return None
 
 def tdbSetPairingStatusByID(pid,status):
+    print("tdbSetPairingStatusByID called: pid="+str(pid)+" status="+str(status))
     # what history entries if any should happen here?
     q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE pid = '"+str(pid)+"';")
     r=q("SELECT * FROM 'Pairings' WHERE pid = "+str(pid)+";")
@@ -562,6 +571,7 @@ def tdbSetPairingStatusByID(pid,status):
         tdbUpdateLastEditEpoch(pid=pid)
         validate=r[0]
         tdbPushTables()
+        print("response in tdbSetPairingStatusByID:"+str(r))
         return {'validate':validate}
     else:
         return {'error':'Query did not return a value'}
