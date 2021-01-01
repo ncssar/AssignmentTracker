@@ -14,8 +14,81 @@
 #
 # #############################################################################
 
-#:import Window kivy.core.window.Window            
+#:import Window kivy.core.window.Window
+
+# Popup widget with icon(s) at the top right
+# default popup kv code is in site_packages/kivy/data/style.kv
+# replace the popup label with a BoxLayout, the leftmost widget of which is the label,
+#  followed by a StackLayout with any number of icon widgets pushed to the right side
+# notice you also need to include the ModalWidget section, verbatim, to get
+#  the opaque dialog over faded background
+
+<-PopupWithIcons>:
+    canvas:
+        Color:
+            rgba: root.background_color[:3] + [root.background_color[-1] * self._anim_alpha]
+        Rectangle:
+            size: self._window.size if self._window else (0, 0)
+
+        Color:
+            rgb: 1, 1, 1
+        BorderImage:
+            source: root.background
+            border: root.border
+            pos: self.pos
+            size: self.size
             
+    _container: container
+    GridLayout:
+        padding: '12dp'
+        cols: 1
+        size_hint: None, None
+        pos: root.pos
+        size: root.size
+        BoxLayout:
+            orientation: 'horizontal'
+            id: topBar
+            size_hint_y: None
+            height: 24
+            spacing: 3
+            
+            Label:
+                text: root.title
+                color: root.title_color
+                size_hint_y: None
+                height: self.texture_size[1] + dp(16)
+                text_size: self.width - dp(16), None
+                font_size: root.title_size
+                font_name: root.title_font
+                halign: root.title_align
+                
+            StackLayout:
+                height: self.parent.height
+                orientation: 'bt-rl'
+                id: iconBox
+                spacing: 3
+                
+                # add icons from code with something like this:
+                # self.popup.ids.iconBox.add_widget(Image(source='images/cloud.png',width=30,size_hint_x=None))
+
+#                 Image:
+#                     source: 'images/cloud.png'
+#                     width: 30
+#                     size_hint_x: None
+
+        Widget:
+            size_hint_y: None
+            height: dp(4)
+            canvas:
+                Color:
+                    rgba: root.separator_color
+                Rectangle:
+                    pos: self.x, self.y + root.separator_height / 2.
+                    size: self.width, root.separator_height
+
+        BoxLayout:
+            id: container
+
 <ButtonWithImage@Button>:
     source: None
     Image:

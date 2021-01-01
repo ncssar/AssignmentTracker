@@ -234,14 +234,16 @@ class assignmentTrackerApp(App):
             Logger.error("ABORTING - no hosts were found.")
             sys.exit()
 
-        tdbInit()
-        self.cloudJoin(init=True)
+        tdbInit() # initialize the local database regardless of join type
+
+        self.joinPopup()
+        # self.cloudJoin(init=True)
         # self.localhostJoin(init=True)
 
         # some hardcoded initial data for development
-        self.newTeam('101','Ground Type 1')
+        # self.newTeam('101','Ground Type 1')
 
-        self.showTeams()
+        # self.showTeams()
 
         # websockets: the first client to join will determine what http
         #  server should send websockets, and where those websockets should
@@ -262,12 +264,34 @@ class assignmentTrackerApp(App):
         # the only time that websockets will be sent to localhost is when
         #  neither LAN nor cloud web hosts are responding.
 
-    def cloudJoin(self,init=False):
+    def joinPopup(self,choices=None):
+        box=BoxLayout(orientation='vertical')
+        popup=PopupWithIcons(
+                title='Join or Initialize',
+                content=box,
+                size_hint=(0.8,0.2),
+                background_color=(0,0,0,1))
+        button=Button(text='Join existing incident')
+        box.add_widget(button)
+        button.bind(on_release=partial(self.cloudJoin,False))
+        button.bind(on_release=popup.dismiss)
+        button=Button(text='Start a new incident')
+        box.add_widget(button)
+        button.bind(on_release=partial(self.cloudJoin,True))
+        button.bind(on_release=popup.dismiss)
+        popup.open()
+
+    def cloudJoin(self,init=False,*args):
+        Logger.info("called cloudJoin; init="+str(init))
         if self.cloud:
             d={'NodeName':self.nodeName}
             if init:
                 d['Init']=True
             self.cloudRequest('api/v1/join','POST',d,timeout=5) # make this a blocking call
+            # if not init: # do an initial sync if we are not initializing
+            self.sync(since=0)
+            Clock.schedule_interval(self.sync,5) # start syncing every 5 seconds
+            self.updateCounts()
 
     def localhostJoin(self,init=False):
         if self.localhost:
@@ -305,7 +329,8 @@ class assignmentTrackerApp(App):
         url=host+urlEnd
         if type(body) is dict:
             body=json.dumps(body)
-        Logger.info("request: "+str(url)+" "+str(method)+" body="+str(body)+" timeout="+str(timeout))
+        if 'since' not in url: # don't show sync requests - too verbose
+            Logger.info("request: "+str(url)+" "+str(method)+" body="+str(body)+" timeout="+str(timeout))
         headers={}
         headers['Authorization']='Bearer '+self.tracker_api_key
         if body:
@@ -417,41 +442,91 @@ class assignmentTrackerApp(App):
                     Logger.info("SSID line found:"+line)
                     self.ssid=line.split(': ')[1]
     
-    # for now, request the entire database from the host, determine differences,
-    #  and for each difference,
-    def sync(self):
-        Logger.info("sync called: lastSyncTimeStamp="+str(self.lastSyncTimeStamp))
-        # self.sendRequest("api/v1/since/"+str(int(self.lastSyncTimeStamp)),on_success=self.on_sync_success)
-        self.sendRequest("api/v1/since/0",on_success=self.on_sync_success)
-        # hostTeams=self.sendRequest("api/v1/teams",on_success=self.on_sync_success)
-        # Logger.info("hostTeams:"+str(hostTeams))
-        # hostAssignments=self.sendRequest("api/v1/assignments")
-        # hostPairings=self.sendRequest("api/v1/pairings")
-        # hostHistory=self.sendRequest("api/v1/history")
+    def sync(self,*args,since=None):
+        since=since or self.lastSyncTimeStamp
+        # Logger.info("sync called: lastSyncTimeStamp="+str(since))
+        self.sendRequest("api/v1/since/"+str(int(since)),on_success=self.on_sync_success)
 
     def on_sync_success(self,request,result):
-        Logger.info("  on_sync_success called:"+str(result))
+        # Logger.info("  on_sync_success called:"+str(result))
         self.lastSyncTimeStamp=float(result['timestamp'])
-        Logger.info("  lastSyncTimeStamp is now "+str(self.lastSyncTimeStamp))
-        tdbProcessSync(result)
+        # Logger.info("  lastSyncTimeStamp is now "+str(self.lastSyncTimeStamp))
+        requiredKeys=['Teams','Assignments','Pairings','History']
+        if not all(key in result.keys() for key in requiredKeys):
+            Logger.info("ERROR: sync result does not contain all required keys:"+str(requiredKeys))
+            return None
+        # if the new/updated host entry already exists local entry,
+        #  update the values of the local entry (e.g. status, resource, timestamp);
+        # otherwise, add it as a new local entry (a different client created it)
+        for e in result['Teams']:
+            # fields to update: TeamStatus, Resource, LastEditEpoch
+            #  (TeamName can never be changed)
+            setString="TeamStatus='"+str(e['TeamStatus'])+"'"
+            setString+=", Resource='"+str(e['Resource'])+"'"
+            setString+=', LastEditEpoch='+str(e['LastEditEpoch'])
+            query='UPDATE Teams SET '+setString+' WHERE tid='+str(e['tid'])+';'
+            Logger.info('Teams sync query:'+query)
+            r=q(query) # return value is number of rows affected
+            Logger.info('  response='+str(r))
+            if r==0:
+                r=tdbNewTeam(
+                        e['TeamName'],
+                        e['Resource'],
+                        status=e['TeamStatus'],
+                        tid=e['tid'],
+                        lastEditEpoch=e['LastEditEpoch'])
+                Logger.info('   creating a new team.  response:'+str(r))
+            if e['TeamName'] in self.callsignPool:
+                self.callsignPool.remove(e['TeamName'])
+        for e in result['Assignments']:
+            # fields to update: AssignmentStatus, IntendedResource, LastEditEpoch
+            #  (AssignmentName can never be changed)
+            setString="AssignmentStatus='"+str(e['AssignmentStatus'])+"'"
+            setString+=", IntendedResource='"+str(e['IntendedResource'])+"'"
+            setString+=', LastEditEpoch='+str(e['LastEditEpoch'])
+            query='UPDATE Assignments SET '+setString+' WHERE aid='+str(e['aid'])+';'
+            Logger.info('Assignment sync query:'+query)
+            r=q(query) # return value is number of rows affected
+            Logger.info('  response='+str(r))
+            if r==0:
+                r=tdbNewAssignment(
+                        e['AssignmentName'],
+                        e['IntendedResource'],
+                        status=e['AssignmentStatus'],
+                        aid=e['aid'],
+                        lastEditEpoch=e['LastEditEpoch'])
+                Logger.info('   creating a new assignment.  response:'+str(r))
+            if e['AssignmentName'] in self.assignmentNamePool:
+                self.assignmentNamePool.remove(e['AssignmentName'])
+        for e in result['Pairings']:
+            # fields to update: PairingStatus, LastEditEpoch
+            #  (tid, aid can never be changed)
+            setString="PairingStatus='"+str(e['PairingStatus'])+"'"
+            setString+=', LastEditEpoch='+str(e['LastEditEpoch'])
+            query='UPDATE Pairings SET '+setString+' WHERE pid='+str(e['pid'])+';'
+            Logger.info('Pairing sync query:'+query)
+            r=q(query) # return value is number of rows affected
+            Logger.info('  response='+str(r))
+            if r==0:
+                # tdbNewPairing will normally set the team and assignment
+                #  statuses to 'ASSIGNED' but if this is joining an already-in-progress
+                #  pairing then the team status (WORKING, ENROUTE TO IC, DEBRIEFING)
+                #  should be preserved
+                r=tdbNewPairing(
+                        e['aid'],
+                        e['tid'],
+                        status=e['PairingStatus'],
+                        pid=e['pid'],
+                        # teamStatus=tdbGetTeamStatusByName(tdbGetTeamNameByID(tid)),
+                        lastEditEpoch=e['LastEditEpoch'])
+                Logger.info('   creating a new pairing.  response:'+str(r))
 
-# apparently, without Clock.tick() at the end of the success handler,
-#  the roster loader doesn't think self.cloud is True yet, therefore it doesn't
-#  request the latest roster from the cloud
-
-    # def on_checkForCloud_success(self,request,result):
-    #     Logger.info("on_checkForCloud_success called: response="+str(result))
-    #     if 'AssignmentTracker Database API' in str(result):
-    #         Logger.info("  valid response detected; cloud connection established.")
-    #         self.cloud=True
-    #         Clock.tick() # to make sure the status is immediately available
-    
-    # def on_checkForCloud_error(self,request,result):
-    #     Logger.info("on_checkForCloud_error called:")
-    #     Logger.info("  request was sent to "+str(request.url))
-    #     Logger.info("    request body="+str(request.req_body))
-    #     Logger.info("    request headers="+str(request.req_headers))
-    #     Logger.info("  result="+str(result))
+        for e in result['History']:
+            pass
+        if self.sm.current=='teamsScreen' and len(result['Teams'])>0:
+            self.showTeams()
+        elif self.sm.current=='assignmentsScreen' and len(result['Assignments'])>0:
+            self.showAssignments()
 
     def newTeam(self,name=None,resource=None,doToast=True):
         name=name or self.newTeamScreen.ids.nameSpinner.text
@@ -469,7 +544,6 @@ class assignmentTrackerApp(App):
         self.buildLists()
         if doToast:
             toast('Team '+str(name)+' ['+str(resource)+'] created')
-
 
     def on_newTeam_success(self,request,response):
         rb=request.req_body
@@ -587,7 +661,6 @@ class assignmentTrackerApp(App):
             self.assignmentsScreen.assignmentsRVList=self.assignmentsScreen.assignmentsRVList+row
         self.sm.transition=NoTransition()
         self.sm.current='assignmentsScreen'
-        self.sync()
 
     def updateCounts(self):
         Logger.info('updateCounts called')
@@ -860,6 +933,10 @@ class NewAssignmentScreen(Screen):
 
 
 class NewPairingScreen(Screen):
+    pass
+
+
+class PopupWithIcons(Popup):
     pass
 
 
