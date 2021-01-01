@@ -520,13 +520,29 @@ class assignmentTrackerApp(App):
                         # teamStatus=tdbGetTeamStatusByName(tdbGetTeamNameByID(tid)),
                         lastEditEpoch=e['LastEditEpoch'])
                 Logger.info('   creating a new pairing.  response:'+str(r))
-
         for e in result['History']:
-            pass
+            # fields to update: Epoch
+            #  (tid, aid, Entry can never be changed)
+            setString="Epoch='"+str(e['Epoch'])+"'"
+            query='UPDATE History SET '+setString+' WHERE hid='+str(e['hid'])+';'
+            Logger.info('History sync query:'+query)
+            r=q(query) # return value is number of rows affected
+            Logger.info('  response='+str(r))
+            if r==0:
+                r=tdbAddHistoryEntry(
+                        entry=e['Entry'],
+                        hid=e['hid'],
+                        aid=e['aid'],
+                        tid=e['tid'],
+                        recordedBy=e['RecordedBy'],
+                        epoch=e['Epoch'])
+                Logger.info('   adding a history entry.  response:'+str(r))
         if self.sm.current=='teamsScreen' and len(result['Teams'])>0:
             self.showTeams()
         elif self.sm.current=='assignmentsScreen' and len(result['Assignments'])>0:
             self.showAssignments()
+        elif self.sm.current=='pairingDetailScreen' and len(result['History'])>0:
+            self.pairingDetailHistoryUpdate()
 
     def newTeam(self,name=None,resource=None,doToast=True):
         name=name or self.newTeamScreen.ids.nameSpinner.text

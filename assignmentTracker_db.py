@@ -68,6 +68,7 @@ PAIRING_COLS=[
 
 HISTORY_COLS=[
     # n is hardcoded as the primary key
+    ["hid","INTEGER"],
     ["aid","INTEGER"],
     ["tid","INTEGER"],
     ["Entry","TEXT"],
@@ -80,6 +81,7 @@ host=False # is this running on a web server host?
 nextAid=1 # only used if this is the host
 nextTid=1 # only used if this is the host
 nextPid=1 # only used if this is the host
+nextHid=1 # only used if this is the host
 
 # websockets default values
 url=""
@@ -248,7 +250,7 @@ def qInsert(tableName,d):
 ##   nodes do not need to do any jsonification
 
 def tdbNewTeam(name,resource,status=None,tid=None,lastEditEpoch=None):
-    # status, tid, and lastEditEpoch arguments will only exist if this is being called from tdbProcessSync
+    # status, tid, and lastEditEpoch arguments will only exist if this is being called from sync handler
     if host: # this clause will only run on the host
         global nextTid
         tid=nextTid
@@ -268,13 +270,14 @@ def tdbNewTeam(name,resource,status=None,tid=None,lastEditEpoch=None):
     r=q('SELECT * FROM Teams ORDER BY n DESC LIMIT 1;')
     # when called from sync handler: don't write a history entry
     if not status: # status arg will only exist when called from sync handler
-        tdbAddHistoryEntry('New Team: '+name,tid=r[0]['tid'],recordedBy='SYSTEM')
+        if host:
+            tdbAddHistoryEntry('New Team: '+name,tid=r[0]['tid'],recordedBy='SYSTEM')
     validate=r[0]
     tdbPushTables()
     return {'validate':validate}
 
 def tdbNewAssignment(name,intendedResource,status=None,aid=None,lastEditEpoch=None):
-    # status, aid, and lastEditEpoch arguments will only exist if this is being called from tdbProcessSync
+    # status, aid, and lastEditEpoch arguments will only exist if this is being called from sync handler
     if host:
         global nextAid
         aid=nextAid
@@ -293,7 +296,8 @@ def tdbNewAssignment(name,intendedResource,status=None,aid=None,lastEditEpoch=No
     r=q('SELECT * FROM Assignments ORDER BY n DESC LIMIT 1;')
     # when called from sync handler: don't write a history entry
     if not status: # status arg will only exist when called from sync handler
-        tdbAddHistoryEntry('New Assignment: '+name,aid=r[0]['aid'],recordedBy='SYSTEM')
+        if host:
+            tdbAddHistoryEntry('New Assignment: '+name,aid=r[0]['aid'],recordedBy='SYSTEM')
     validate=r[0]
     tdbPushTables()
     return {'validate':validate}
@@ -320,7 +324,8 @@ def tdbNewPairing(aid,tid,status=None,pid=None,lastEditEpoch=None):
     if not status: # status arg will only exist when called from sync handler
         tdbSetTeamStatusByID(tid,'ASSIGNED',push=False) # don't push tables yet
         tdbSetAssignmentStatusByID(aid,'ASSIGNED',push=False) # don't push tables yet
-        tdbAddHistoryEntry('New Pairing: '+assignmentName+'+'+teamName,aid=aid,tid=tid,recordedBy='SYSTEM')
+        if host:
+            tdbAddHistoryEntry('New Pairing: '+assignmentName+'+'+teamName,aid=aid,tid=tid,recordedBy='SYSTEM')
     qInsert('Pairings',d)
     r=q('SELECT * FROM Pairings ORDER BY n DESC LIMIT 1;')
     validate=r[0]
@@ -338,6 +343,16 @@ def tdbNewAssignmentFinalize(n,aid,lastEditEpoch):
 def tdbNewPairingFinalize(n,pid,lastEditEpoch):
     # print("New pairing finalize:"+str(n)+"="+str(pid))
     q("UPDATE 'Pairings' SET pid = '"+str(pid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
+
+# no need to finalize history entries:
+#  all history entries are initially created on the server anyway;
+#  a client will never need to push a new history entry to the server;
+#  all the interactive calls are done by API request, and the API
+#  request handler on the server will make the new history entry.
+
+# def tdbNewHistoryEntryFinalize(n,hid,epoch):
+#     # print("New pairing finalize:"+str(n)+"="+str(pid))
+#     q("UPDATE 'History' SET hid = '"+str(hid)+"', Epoch = '"+str(epoch)+"' WHERE n = '"+str(n)+"';")
 
 # tdbHome - return a welcome message to verify that this code is running
 def tdbHome():
@@ -580,7 +595,8 @@ def tdbSetPairingStatusByID(pid,status):
     # print("tdbSetPairingStatusByID called: pid="+str(pid)+" status="+str(status))
     [assignmentName,teamName]=tdbGetPairingNamesByID(pid)
     [aid,tid]=tdbGetPairingIDsByID(pid)
-    tdbAddHistoryEntry(assignmentName+'+'+teamName+' -> '+status,tid=tid,aid=aid)
+    if host:
+        tdbAddHistoryEntry(assignmentName+'+'+teamName+' -> '+status,tid=tid,aid=aid)
     # what history entries if any should happen here?
     q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE pid = '"+str(pid)+"';")
     r=q("SELECT * FROM 'Pairings' WHERE pid = "+str(pid)+";")
@@ -594,7 +610,8 @@ def tdbSetPairingStatusByID(pid,status):
         return {'error':'Query did not return a value'}
     
 def tdbSetTeamStatusByID(tid,status,push=True):
-    tdbAddHistoryEntry(tdbGetTeamNameByID(tid)+' -> '+status,tid=tid,recordedBy='SYSTEM')
+    if host:
+        tdbAddHistoryEntry(tdbGetTeamNameByID(tid)+' -> '+status,tid=tid,recordedBy='SYSTEM')
     q("UPDATE 'Teams' SET TeamStatus = '"+str(status)+"' WHERE tid = '"+str(tid)+"';")
     r=q("SELECT * FROM 'Teams' WHERE tid = "+str(tid)+";")
     if r:
@@ -611,7 +628,8 @@ def tdbSetTeamStatusByName(teamName,status,push=True):
     tdbSetTeamStatusByID(tid,status,push)
 
 def tdbSetAssignmentStatusByID(aid,status,push=True):
-    tdbAddHistoryEntry(tdbGetAssignmentNameByID(aid)+' -> '+status,aid=aid,recordedBy='SYSTEM')
+    if host:
+        tdbAddHistoryEntry(tdbGetAssignmentNameByID(aid)+' -> '+status,aid=aid,recordedBy='SYSTEM')
     q("UPDATE 'Assignments' SET AssignmentStatus = '"+str(status)+"' WHERE aid = '"+str(aid)+"';")
     r=q("SELECT * FROM 'Assignments' WHERE aid = "+str(aid)+";")
     if r:
@@ -642,13 +660,25 @@ def tdbUpdateLastEditEpoch(tid=None,aid=None,pid=None):
         query="UPDATE 'Pairings' SET LastEditEpoch = "+str(t)+" WHERE pid="+str(pid)+";"
         q(query)
 
-def tdbAddHistoryEntry(entry,aid=-1,tid=-1,recordedBy='N/A'):
-    qInsert('History',{
+def tdbAddHistoryEntry(entry,hid=-1,aid=-1,tid=-1,recordedBy='N/A',epoch=None):
+    # only the server can create original history entries; clients can only
+    #  create local history entries during sync; hid and epoch arguments will
+    #  only exist if this is being called from sync handler
+    if host:
+        global nextHid
+        hid=nextHid
+        nextHid+=1
+    else:
+        hid=hid or -1
+    epoch=epoch or round(time.time(),2)
+    r=qInsert('History',{
+        'hid':hid,
         'aid':aid,
         'tid':tid,
         'Entry':entry,
         'RecordedBy':recordedBy,
-        'Epoch':round(time.time())})
+        'Epoch':epoch})
+    return r
 
 def tdbGetPairingIDsByID(pid=None):
     r=tdbGetPairings(pid)[0]
