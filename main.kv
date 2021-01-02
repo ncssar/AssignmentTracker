@@ -89,6 +89,13 @@
         BoxLayout:
             id: container
 
+# Label with text wrap; height grows as needed to accomodate wrapped text
+# from https://blog.kivy.org/2014/07/wrapping-text-in-kivys-label/
+<WrappedLabel@Label>:
+    text_size: self.width,None
+    size_hint_y: None
+    height: self.texture_size[1]
+
 <ButtonWithImage@Button>:
     source: None
     Image:

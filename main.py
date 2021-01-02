@@ -264,9 +264,9 @@ class assignmentTrackerApp(App):
         # the only time that websockets will be sent to localhost is when
         #  neither LAN nor cloud web hosts are responding.
 
-    def joinPopup(self,choices=None):
+    def joinPopup(self):
         box=BoxLayout(orientation='vertical')
-        popup=PopupWithIcons(
+        self.joinPopup=PopupWithIcons(
                 title='Join or Initialize',
                 content=box,
                 size_hint=(0.8,0.2),
@@ -274,11 +274,40 @@ class assignmentTrackerApp(App):
         button=Button(text='Join existing incident')
         box.add_widget(button)
         button.bind(on_release=partial(self.cloudJoin,False))
-        button.bind(on_release=popup.dismiss)
+        button.bind(on_release=self.joinPopup.dismiss)
         button=Button(text='Start a new incident')
         box.add_widget(button)
-        button.bind(on_release=partial(self.cloudJoin,True))
-        button.bind(on_release=popup.dismiss)
+        button.bind(on_release=self.newIncidentConfirmPopup)
+        # button.bind(on_release=partial(self.cloudJoin,True))
+        # button.bind(on_release=popup.dismiss)
+        self.joinPopup.open()
+
+    def newIncidentConfirmPopup(self,*args):
+        okButton=Button(text='OK')
+        okButton.disabled=True
+        def okButtonDisabledUpdate(self,text):
+            okButton.disabled=text==''
+        box=BoxLayout(orientation='vertical')
+        popup=PopupWithIcons(
+                title='New incident - confirm',
+                content=box,
+                size_hint=(0.8,None), # relative to screen, not to joinPopup
+                background_color=(0,0,0,0.5))
+        label=WrappedLabel(text='Starting a new incident will reset the database for all connected users.\n\nIf you really want to start a new incident, enter the new incident name below:')
+        box.add_widget(label)
+        incidentName=TextInput(multiline=False,size_hint_y=None,height=30)
+        incidentName.bind(text=okButtonDisabledUpdate)
+        box.add_widget(incidentName)
+        okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
+        okButton.bind(on_release=partial(self.cloudJoin,True))
+        okButton.bind(on_release=popup.dismiss)
+        okButton.bind(on_release=self.joinPopup.dismiss)
+        cancelButton=Button(text='Cancel')
+        cancelButton.bind(on_release=popup.dismiss)
+        okCancelBox.add_widget(okButton)
+        okCancelBox.add_widget(cancelButton)
+        box.add_widget(okCancelBox)
+        popup.height=popup.content.height+130
         popup.open()
 
     def cloudJoin(self,init=False,*args):
@@ -953,6 +982,10 @@ class NewPairingScreen(Screen):
 
 
 class PopupWithIcons(Popup):
+    pass
+
+
+class WrappedLabel(Label):
     pass
 
 
