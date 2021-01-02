@@ -56,6 +56,9 @@
       padding-left:10px;
       padding-right:10px;
     }
+    #lastChangeLabel {
+      font-size:12px;
+    }
     .big {
       font-size:26px;
       margin:0px;
@@ -120,7 +123,7 @@
       });
       var channel = pusher.subscribe('my-channel');
       channel.bind('my-event', function(data) {
-        wsFlashIcon('www');
+        wsFlashIcon('www_icon_20x20');
         wsHandleEvent({'data':JSON.stringify(data)});
       });
     }
@@ -147,7 +150,7 @@
     try {
       wsLAN = new WebSocket(wsLANURL);
       wsLAN.onmessage=function(event) { 
-        wsFlashIcon('lan');
+        wsFlashIcon('lan_icon_20x20');
         wsHandleEvent(event);
       };
     }
@@ -163,7 +166,15 @@
       },500);
     }
 
+    var age=0;
+    var firstWs=0;
     function wsHandleEvent (event) {
+      age=0;
+      document.getElementById('lastChangeLabel').innerHTML='Just Now';
+      if (firstWs==0) {
+        firstWs=1;
+        setInterval(updateLastSyncLabel,5000);
+      }
       var d=JSON.parse(event.data);
       var msg=JSON.parse(d.msg);
       // alert("incoming message:"+JSON.stringify(msg))
@@ -290,7 +301,28 @@
       document.getElementById("TeamsButtonHeader").className='small';
       document.getElementById("AssignmentsButtonHeader").className='big';
     }
-    
+
+    function updateLastSyncLabel(){
+      switch(true) {
+        case age<10:
+          text='<10 sec.';
+          break;
+        case age<60:
+          text='<1 min.';
+          break;
+        case age<3600:
+          text=Math.floor(age/60)+' min.';
+          break;
+        default:
+          var h=Math.floor(age/3600);
+          var m=Math.floor((age-(h*3600))/60);
+          text=h+'h'+m+'m';
+      }
+      // window.document.title=text;
+      label=document.getElementById('lastChangeLabel');
+      label.innerHTML=text;
+      age=age+5;
+    }
     // multi-column click-sorting from
     //  https://www.w3schools.com/howto/howto_js_sort_table.asp
     function sortTable(tableID,n,dir) {
@@ -385,7 +417,10 @@
       <span id="unassignedAssignmentsLabel" class="count"></span>
       <span id="completedAssignmentsLabel" class="count"></span>
     </button>
-    <span id="wsIcon"></span>
+    <span id="lastChangeSpan">
+      <span id="wsIcon"></span>
+      <span id="lastChangeLabel"></span>
+    </span>
   </div>
   <div id='tablesDiv'>
     <div id = 'teamsDiv'>Your result will display here</div>
