@@ -115,6 +115,9 @@
 <body>
   <script>
     // Enable pusher logging - don't include this in production
+    // note, pusher.min.js throws an error in IE:
+    // SCRIPT438: Object doesn't support property or method 'assign'
+    //  pusher.min.js (8,48881)
     try {
       Pusher.logToConsole = true;
 
@@ -256,7 +259,8 @@
         table.appendChild(header);
         var tableBody = document.createElement('tbody');
         // color mapping from https://dev.to/k_penguin_sato/use-lookup-tables-for-cleaning-up-your-js-ts-code-9gk
-        const statusToColor=(status)=>colorMap[status]||"gray";
+        // const statusToColor=(status)=>colorMap[status]||"gray"; // this line causes syntax error for IE
+        const statusToColor=function(status) {return colorMap[status]||"gray";}
         tableData.forEach(function(rowData) {
           var status=rowData[2]; // same index for team table and assignment table
           var row = document.createElement('tr');

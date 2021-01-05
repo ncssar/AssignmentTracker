@@ -89,6 +89,23 @@
         BoxLayout:
             id: container
 
+<ExpandingPopup@Popup>:
+    height: theBox.height+50
+    size_hint: (0.8,None)
+    text: '123'
+    BoxLayout:
+        orientation: 'vertical'
+        id: theBox
+        size_hint: (1, None)
+        height: self.minimum_height + 25
+        Label:
+            id: theLabel
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: (self.width, None)
+            text: self.parent.parent.parent.parent.text
+            padding: (0, 10)
+
 # Label with text wrap; height grows as needed to accomodate wrapped text
 # from https://blog.kivy.org/2014/07/wrapping-text-in-kivys-label/
 <WrappedLabel@Label>:

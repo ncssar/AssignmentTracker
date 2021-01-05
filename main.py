@@ -117,6 +117,33 @@ def toast(text):
     else:
         Logger.info("TOAST:"+text)
 
+# SITU_DEPLOYMENT_CHECKLIST='''
+#     one-liner
+#     two-liner'''
+
+NEW_PAIRING_POPUP_TEXT='''
+    SITU should take the following actions:
+
+    1. Edit the SARTopo Assignment object:
+      1a. Set 'Number' to Team #
+      1b. Set or update 'Resource Type'
+      1c. Set or update 'Team Size'
+      1d. Set 'Status' to INPROGRESS
+    2. Add a medical marker if needed:
+      2a. Use the correct Style
+      2b. Set 'Comments' to Team # (leave 'Label' blank)
+      2c. Set 'Folder' to 'Medical' (Add Folder if needed)
+    3. Keep the paper 104 in a 'processed' stack'''
+
+COMPLETED_PAIRING_POPUP_TEXT='''
+    SITU should take the following actions:
+    
+    1. Edit the SARTopo Assignment object:
+      1a. Set 'Number' to blank
+      1b. Set 'Status' to COMPLETED
+    2. Delete related medical marker, if any
+    3. Deliver paper 104 to RESU'''
+
 # NOTE regarding ID values:
 # tid = team ID; aid = assignment ID; pid = pairing ID
 # these values are set to -1 when created on a client, or a positive integer when
@@ -309,6 +336,13 @@ class assignmentTrackerApp(App):
         box.add_widget(okCancelBox)
         popup.height=popup.content.height+130
         popup.open()
+
+    def newPairingPopup(self,assignmentName,teamName):
+        # popup=ExpandingPopup(title='New Pairing - confirm')
+        # popup.text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\nSITU should take the following actions:\n'+DEPLOYMENT_POPUP_TEXT
+        # popup.ids.theButton.bind(on_release=popup.dismiss)
+        # popup.open()
+        self.textpopup(text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\n'+NEW_PAIRING_POPUP_TEXT)
 
     def cloudJoin(self,init=False,*args):
         Logger.info("called cloudJoin; init="+str(init))
@@ -655,6 +689,10 @@ class assignmentTrackerApp(App):
             r=tdbNewPairing(aid,tid) # also sets team and assignment to ASSIGNED
             n=r['validate']['n']
             self.sendRequest('api/v1/pairings/new','POST',{'aid':aid,'tid':tid,'n':n},on_success=self.on_newPairing_success)
+        # self.newPairingPopup(assignmentName,teamName)
+        self.textpopup(
+                title='New Pairing',
+                text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\n'+NEW_PAIRING_POPUP_TEXT)
         self.showAssignments() # close the new pairing dialog after creating the pairing; not likely to need to pair another team
         # avoid sending multiple requests back to back, since this can create race conditions
         #  and html flickers with clients receiving multiple different websocket messages
@@ -862,6 +900,9 @@ class assignmentTrackerApp(App):
             if not others:
                 tdbSetAssignmentStatusByID(aid,'COMPLETED')
                 self.sendRequest("api/v1/assignments/"+str(aid)+"/status","PUT",{"NewStatus":"COMPLETED"})
+            self.textpopup(
+                    title='Pairing completed',
+                    text='A pairing has been completed:\n  Assignment='+assignmentName+'  Team='+teamName+'\n\n'+COMPLETED_PAIRING_POPUP_TEXT)
             self.showAssignments()
         else:
             Logger.info('changing status for team '+str(teamName)+' to '+str(status))
@@ -872,24 +913,36 @@ class assignmentTrackerApp(App):
             self.pairingDetailStatusUpdate()
             self.pairingDetailHistoryUpdate()
 
-    def textpopup(self, title='', text='', buttonText='OK', on_release=None, size_hint=(0.8,0.25)):
-        Logger.info("textpopup called; on_release="+str(on_release))
-        box = BoxLayout(orientation='vertical')
-        box.add_widget(Label(text=text))
+#     def textpopup(self, title='', text='', buttonText='OK', on_release=None, size_hint=(0.8,None)):
+#         Logger.info("textpopup called; on_release="+str(on_release))
+#         box = BoxLayout(orientation='vertical',size_hint_y=None)
+#         box.add_widget(WrappedLabel(text=text))
+#         if buttonText is not None:
+#             mybutton = Button(text=buttonText, size_hint=(1, None))
+#             box.add_widget(mybutton)
+# #         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
+#         popup = PopupWithIcons(title=title, content=box, size_hint=size_hint)
+# #         if not on_release:
+# #             on_release=self.stop
+#         if buttonText is not None:
+#             mybutton.bind(on_release=popup.dismiss)
+#             if on_release:
+#                 mybutton.bind(on_release=on_release)
+#         # popup.height=popup.content.height+150
+#         popup.open()
+#         return popup # so that the calling code can close the popup
+
+    def textpopup(self, title='', text='', buttonText='OK', on_release=None, size_hint=(0.8,None)):
+        popup=ExpandingPopup(title=title)
+        popup.text=text
         if buttonText is not None:
-            mybutton = Button(text=buttonText, size_hint=(1, 0.3))
-            box.add_widget(mybutton)
-#         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
-        popup = Popup(title=title, content=box, size_hint=size_hint)
-#         if not on_release:
-#             on_release=self.stop
-        if buttonText is not None:
-            mybutton.bind(on_release=popup.dismiss)
+            button = Button(text=buttonText, size_hint=(1, None))
+            popup.ids.theBox.add_widget(button)
+            button.bind(on_release=popup.dismiss)
             if on_release:
-                mybutton.bind(on_release=on_release)
+                button.bind(on_release=on_release)
         popup.open()
-        return popup # so that the calling code can close the popup
-        
+        return popup
             
 
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
@@ -986,6 +1039,10 @@ class PopupWithIcons(Popup):
 
 
 class WrappedLabel(Label):
+    pass
+
+
+class ExpandingPopup(Popup):
     pass
 
 
