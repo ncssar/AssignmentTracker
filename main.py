@@ -69,6 +69,7 @@ from kivy.uix.switch import Switch
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.image import Image
 from kivy.uix.popup import Popup
+from kivy.uix.spinner import Spinner
 from kivy.uix.dropdown import DropDown
 from kivy.uix.textinput import TextInput
 from kivy.properties import BooleanProperty, ListProperty, StringProperty, ObjectProperty, NumericProperty
@@ -144,6 +145,13 @@ COMPLETED_PAIRING_POPUP_TEXT='''
     2. Delete related medical marker, if any
     3. Deliver paper 104 to RESU'''
 
+ROLES=[
+    'SITUATION UNIT',
+    'RESOURCE UNIT',
+    'OPERATIONS CHIEF',
+    'PLANNING CHIEF',
+    'OBSERVER']
+
 # NOTE regarding ID values:
 # tid = team ID; aid = assignment ID; pid = pairing ID
 # these values are set to -1 when created on a client, or a positive integer when
@@ -173,7 +181,7 @@ class assignmentTrackerApp(App):
         self.cloud=False
         self.localhost=False
 
-        self.nodeName='SITUATION UNIT'
+        self.nodeName='OBSERVER'
         self.callsignPool=list(map(str,range(101,200)))
         self.assignmentNamePool=[chr(a)+chr(b) for a in range(65,91) for b in range(65,91)] # AA..AZ,BA..BZ,..
 
@@ -293,7 +301,7 @@ class assignmentTrackerApp(App):
 
     def joinPopup(self):
         box=BoxLayout(orientation='vertical')
-        self.joinPopup=PopupWithIcons(
+        self.joinPopup_=PopupWithIcons(
                 title='Join or Initialize',
                 content=box,
                 size_hint=(0.8,0.2),
@@ -301,13 +309,11 @@ class assignmentTrackerApp(App):
         button=Button(text='Join existing incident')
         box.add_widget(button)
         button.bind(on_release=partial(self.cloudJoin,False))
-        button.bind(on_release=self.joinPopup.dismiss)
+        button.bind(on_release=self.joinPopup_.dismiss)
         button=Button(text='Start a new incident')
         box.add_widget(button)
         button.bind(on_release=self.newIncidentConfirmPopup)
-        # button.bind(on_release=partial(self.cloudJoin,True))
-        # button.bind(on_release=popup.dismiss)
-        self.joinPopup.open()
+        self.joinPopup_.open()
 
     def newIncidentConfirmPopup(self,*args):
         okButton=Button(text='OK')
@@ -328,7 +334,7 @@ class assignmentTrackerApp(App):
         okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
         okButton.bind(on_release=partial(self.cloudJoin,True))
         okButton.bind(on_release=popup.dismiss)
-        okButton.bind(on_release=self.joinPopup.dismiss)
+        okButton.bind(on_release=self.joinPopup_.dismiss)
         cancelButton=Button(text='Cancel')
         cancelButton.bind(on_release=popup.dismiss)
         okCancelBox.add_widget(okButton)
@@ -337,16 +343,37 @@ class assignmentTrackerApp(App):
         popup.height=popup.content.height+130
         popup.open()
 
+    def joinAsPopup(self,*args):
+        box=BoxLayout(orientation='vertical')
+        self.joinAsPopup_=PopupWithIcons(
+                title='Select a Role',
+                content=box,
+                size_hint=(0.8,0.2),
+                background_color=(0,0,0,1))
+        label=Label(text='This device is assigned to:')
+        box.add_widget(label)
+        spinner=Spinner(text=ROLES[0],values=ROLES)
+        spinner.bind(text=self.setNodeName)
+        box.add_widget(spinner)
+        button=Button(text='OK')
+        box.add_widget(button)
+        button.bind(on_release=self.joinAsPopup_.dismiss)
+        self.joinAsPopup_.open()
+
+    def setNodeName(self,spinner,*args):
+        Logger.info("setNodeName called:"+str(spinner.text))
+        self.nodeName=spinner.text
+        self.teamsScreen.ids.deviceHeader.ids.deviceLabel.text=self.nodeName
+        self.assignmentsScreen.ids.deviceHeader.ids.deviceLabel.text=self.nodeName
+
     def newPairingPopup(self,assignmentName,teamName):
-        # popup=ExpandingPopup(title='New Pairing - confirm')
-        # popup.text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\nSITU should take the following actions:\n'+DEPLOYMENT_POPUP_TEXT
-        # popup.ids.theButton.bind(on_release=popup.dismiss)
-        # popup.open()
         self.textpopup(text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\n'+NEW_PAIRING_POPUP_TEXT)
 
     def cloudJoin(self,init=False,*args):
         Logger.info("called cloudJoin; init="+str(init))
         if self.cloud:
+            self.joinAsPopup()
+            # self.nodeName=self.joinAsPopup_.ids.theSpinner.text
             d={'NodeName':self.nodeName}
             if init:
                 d['Init']=True
@@ -913,25 +940,6 @@ class assignmentTrackerApp(App):
             self.pairingDetailStatusUpdate()
             self.pairingDetailHistoryUpdate()
 
-#     def textpopup(self, title='', text='', buttonText='OK', on_release=None, size_hint=(0.8,None)):
-#         Logger.info("textpopup called; on_release="+str(on_release))
-#         box = BoxLayout(orientation='vertical',size_hint_y=None)
-#         box.add_widget(WrappedLabel(text=text))
-#         if buttonText is not None:
-#             mybutton = Button(text=buttonText, size_hint=(1, None))
-#             box.add_widget(mybutton)
-# #         popup = Popup(title=title, content=box, size_hint=(None, None), size=(600, 300))
-#         popup = PopupWithIcons(title=title, content=box, size_hint=size_hint)
-# #         if not on_release:
-# #             on_release=self.stop
-#         if buttonText is not None:
-#             mybutton.bind(on_release=popup.dismiss)
-#             if on_release:
-#                 mybutton.bind(on_release=on_release)
-#         # popup.height=popup.content.height+150
-#         popup.open()
-#         return popup # so that the calling code can close the popup
-
     def textpopup(self, title='', text='', buttonText='OK', on_release=None, size_hint=(0.8,None)):
         popup=ExpandingPopup(title=title)
         popup.text=text
@@ -943,10 +951,8 @@ class assignmentTrackerApp(App):
                 button.bind(on_release=on_release)
         popup.open()
         return popup
-            
 
 # from https://kivy.org/doc/stable/api-kivy.uix.recycleview.htm and http://danlec.com/st4k#questions/47309983
-
 
 # prevent keyboard on selection by getting rid of FocusBehavior from inheritance list
 class SelectableRecycleGridLayout(LayoutSelectionBehavior,
