@@ -275,14 +275,6 @@
     BoxLayout:
         orientation: 'horizontal'
         Button:
-            id: teamsViewButton
-            text: 'Teams'
-            markup: True
-            halign: 'center'
-            valign: 'bottom'
-            line_height: 0.7
-            on_press: app.showTeams()
-        Button:
             id: assignmentsViewButton
             text: 'Assignments'
             markup: True
@@ -290,6 +282,14 @@
             valign: 'bottom'
             line_height: 0.7
             on_press: app.showAssignments()
+        Button:
+            id: teamsViewButton
+            text: 'Teams'
+            markup: True
+            halign: 'center'
+            valign: 'bottom'
+            line_height: 0.7
+            on_press: app.showTeams()
 
 <DeviceHeader@BoxLayout>:
     BoxLayout:

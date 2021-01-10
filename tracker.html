@@ -8,11 +8,22 @@
     }
     html, body {
       font-family: Verdana,sans-serif;
+      margin:2px;
     }
     button {
       height:50px;
-      width:200px;
+      width:50%;
       top:0px;
+    }
+    .btnTableRow {
+      height:44px;
+    }
+    .buttonSmall {
+      height:50px;
+      width:80px;
+      top:0px;
+      padding:0px;
+      line-height:1;
     }
     table, th, td {
       border: 1px solid black;
@@ -34,10 +45,14 @@
     }
     #buttonsDiv {
       height:50px;
-      margin:5px;
+      margin:0px;
       padding:0px;
       border:0px;
       display:table;
+      white-space:nowrap;
+    }
+    #buttonsDiv table, td {
+      border: 0px;
     }
     #tablesDiv {
       position: relative;
@@ -47,25 +62,52 @@
       position:absolute;
       top: 0px;
     }
+    #aBtnRightTable {
+      height:44px;
+    }
+    #tBtnRightTable {
+      height:36px;
+      margin-top:4px;
+      margin-bottom:4px;
+    }
     #assignmentsCompletedDiv {
       position: relative;
       top: 20px;
     }
-    span.count {
+    .count {
       font-size:10px;
+    }
+    #tBtnBotRow span, #aBtnBotRow span {
+      margin-left:10px;
+      margin-right:10px;
+    }
+    #buttonsDivWide span.count {
       padding-left:10px;
       padding-right:10px;
     }
     #lastChangeLabel {
       font-size:12px;
     }
+    .inactive {
+      color:#666;
+    }
+    .active {
+      color: #000;
+    }
+    button table,td,span {
+      /* border:0px; */
+      padding:0px;
+      width:100%;
+    }
     .big {
       font-size:26px;
       margin:0px;
+      line-height:24px;
     }
     .small {
       font-size:16px;
       margin:0px;
+      line-height:24px;
       margin-top:9px; /* not sure why but this prevents the button from shifting up */
     }
     /* CSS arrows from https://css-tricks.com/snippets/css/css-triangle/ */
@@ -112,7 +154,7 @@
   <script src="https://js.pusher.com/7.0/pusher.min.js"></script> 
   <script src="file:\\C:/tracker_config.js"></script>
 </head>
-<body>
+<body onresize="onResize()" onload="onLoad()">
   <script>
     // Enable pusher logging - don't include this in production
     // note, pusher.min.js throws an error in IE:
@@ -190,6 +232,47 @@
       unassignedAssignmentsLabel.innerHTML="U:"+msg.unassignedAssignmentsCount;
       completedAssignmentsLabel.innerHTML="C:"+msg.completedAssignmentsCount;
     };
+
+    var widthMode="wide";
+    var wThreshold=400;
+
+    var tdiv,adiv,tb,ab,tbl,abl,art,abr,trt,tbr;
+
+    function onLoad(){
+      tdiv=document.getElementById("teamsDiv");
+      adiv=document.getElementById("assignmentsDiv");
+      tb=document.getElementById("tBtn");
+      ab=document.getElementById("aBtn");
+      tbl=document.getElementById("tBtnLabel");
+      abl=document.getElementById("aBtnLabel");
+      art=document.getElementById("aBtnRightTable");
+      abr=document.getElementById("aBtnBotRow");
+      trt=document.getElementById("tBtnRightTable");
+      tbr=document.getElementById("tBtnBotRow");
+      setWidthMode();
+    }
+
+    function onResize() {
+      var w = window.outerWidth;
+      if (widthMode=="wide" && w<wThreshold) {
+        setWidthMode();
+      } else if (widthMode=="narrow" && w>wThreshold) {
+        setWidthMode();
+      }
+    }
+
+    function setWidthMode() {
+      var w = window.outerWidth;
+      widthMode=w<wThreshold?"narrow":"wide";
+      art.style.visibility=widthMode=="narrow"?"":"hidden";
+      art.parentNode.style.width=widthMode=="narrow"?"75%":"0%";
+      abr.style.visibility=widthMode=="wide"?"":"collapse";
+      trt.style.visibility=widthMode=="narrow"?"":"hidden";
+      trt.parentNode.style.width=widthMode=="narrow"?"75%":"0%";
+      tbr.style.visibility=widthMode=="wide"?"":"collapse";
+      abl.innerHTML=widthMode=="wide"?"Assignments":"A";
+      tbl.innerHTML=widthMode=="wide"?"Teams":"T";
+    }
 
     var colorMap={
           'UNASSIGNED': '#cfc',
@@ -293,17 +376,21 @@
     }
 
     function showTeamsView(){
-      document.getElementById("teamsDiv").style.visibility='visible';
-      document.getElementById("assignmentsDiv").style.visibility='hidden';
-      document.getElementById("TeamsButtonHeader").className='big';
-      document.getElementById("AssignmentsButtonHeader").className='small';
+      tdiv.style.visibility='visible';
+      adiv.style.visibility='hidden';  
+      tbl.className='big';
+      abl.className='small';
+      tb.className='active';
+      ab.className='inactive';
     }
     
     function showAssignmentsView(){
-      document.getElementById("teamsDiv").style.visibility='hidden';
-      document.getElementById("assignmentsDiv").style.visibility='visible';
-      document.getElementById("TeamsButtonHeader").className='small';
-      document.getElementById("AssignmentsButtonHeader").className='big';
+      tdiv.style.visibility='hidden';
+      adiv.style.visibility='visible';
+      tbl.className='small';
+      abl.className='big';
+      tb.className='inactive';
+      ab.className='active';
     }
 
     function updateLastSyncLabel(){
@@ -409,27 +496,72 @@
       }
     }
   </script>
-  <div id="buttonsDiv">
-    <button type="button" onclick="showTeamsView()">
-      <div id="TeamsButtonHeader">Teams</div>
-      <span id="assignedTeamsLabel" class="count"></span>
-      <span id="unassignedTeamsLabel" class="count"></span>
+  <span id="buttonsDiv">
+    <button type="button" id="aBtn" onclick="showAssignmentsView()">
+      <table id="aBtnTable">
+        <tr class="btnTableRow">
+          <td>
+            <table>
+              <tr>
+                <td id="aBtnLabel">A</td>
+              </tr>
+              <tr id="aBtnBotRow">
+                <td>
+                  <span id="aALabelBot" class="count">A:--</span>
+                  <span id="aULabelBot" class="count">U:--</span>
+                  <span id="aCLabelBot" class="count">C:--</span>
+                </td>
+              </tr>
+            </table>
+          <td>
+            <table id="aBtnRightTable">
+              <tr>
+                <td id="aALabelRight" class="count">A:--</td>
+              </tr>
+              <tr>
+                <td id="aULabelRight" class="count">U:--</td>
+              </tr>
+              <tr>
+                <td id="aCLabelRight" class="count">C:--</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </button>
-    <button type="button" onclick="showAssignmentsView()">
-      <div id="AssignmentsButtonHeader">Assignments</div>
-      <span id="assignedAssignmentsLabel" class="count"></span>
-      <span id="unassignedAssignmentsLabel" class="count"></span>
-      <span id="completedAssignmentsLabel" class="count"></span>
+    <button type="button" id="tBtn" onclick="showTeamsView()">
+      <table id="tBtnTable">
+        <tr class="btnTableRow">
+          <td>
+            <table>
+              <tr>
+                <td id="tBtnLabel">T</td>
+              </tr>
+              <tr id="tBtnBotRow">
+                <td>
+                  <span id="tALabelBot" class="count">A:--</span>
+                  <span id="tULabelBot" class="count">U:--</span>
+                </td>
+              </tr>
+            </table>
+          <td>
+            <table id="tBtnRightTable">
+              <tr>
+                <td id="tALabelRight" class="count">A:--</td>
+              </tr>
+              <tr>
+                <td id="tULabelRight" class="count">U:--</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </button>
-    <span id="lastChangeSpan">
-      <span id="wsIcon"></span>
-      <span id="lastChangeLabel"></span>
-    </span>
-  </div>
+  </span>
   <div id='tablesDiv'>
-    <div id = 'teamsDiv'>Your result will display here</div>
+    <div id = 'teamsDiv'>Waiting for data</div>
     <div id = 'assignmentsDiv'>
-      <div id = 'assignmentsNotCompletedDiv'>Your result will display here</div>
+      <div id = 'assignmentsNotCompletedDiv'>Waiting for data</div>
       <div id = 'assignmentsCompletedDiv'>&nbsp;</div>
     </div>
   </div>

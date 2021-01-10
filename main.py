@@ -373,7 +373,6 @@ class assignmentTrackerApp(App):
         Logger.info("called cloudJoin; init="+str(init))
         if self.cloud:
             self.joinAsPopup()
-            # self.nodeName=self.joinAsPopup_.ids.theSpinner.text
             d={'NodeName':self.nodeName}
             if init:
                 d['Init']=True
