@@ -15,6 +15,19 @@
       width:50%;
       top:0px;
     }
+    #optionsButton {
+      height:16px;
+      width:16px;
+      background-image: url('./img/options-icon-48.png');
+      background-size: 100%;
+      float:right;
+      border:2px outset gray;
+    }
+    #toolbar {
+      width:100%;
+      height:100%;
+      padding: 2px 0px;
+    }
     .btnTableRow {
       height:44px;
     }
@@ -28,7 +41,7 @@
     table, th, td {
       border: 1px solid black;
       border-collapse: collapse;
-      padding: 5px;
+      padding: 1px;
       text-align: center;
       font-size:16px;
       table-layout: fixed;
@@ -42,6 +55,7 @@
     }
     th {
       font-size:12px;
+      padding:3px;
     }
     #buttonsDiv {
       height:50px;
@@ -51,11 +65,14 @@
       display:table;
       white-space:nowrap;
     }
-    #buttonsDiv table, td {
+    #buttonsDiv table, #buttosDiv td {
       border: 0px;
     }
     #tablesDiv {
       position: relative;
+    }
+    #tablesDiv tr {
+      padding:0px;
     }
     #teamsDiv, #assignmentsDiv {
       visibility: hidden;
@@ -87,15 +104,16 @@
     }
     #lastChangeLabel {
       font-size:12px;
+      vertical-align:top;
     }
     .inactive {
-      color:#666;
+      color:#777;
     }
     .active {
       color: #000;
     }
-    button table,td,span {
-      /* border:0px; */
+    button table, button td, button span {
+      border:0px;
       padding:0px;
       width:100%;
     }
@@ -168,7 +186,7 @@
       });
       var channel = pusher.subscribe('my-channel');
       channel.bind('my-event', function(data) {
-        wsFlashIcon('www_icon_20x20');
+        wsFlashIcon('www-letters-icon-16');
         wsHandleEvent({'data':JSON.stringify(data)});
       });
     }
@@ -195,7 +213,7 @@
     try {
       wsLAN = new WebSocket(wsLANURL);
       wsLAN.onmessage=function(event) { 
-        wsFlashIcon('lan_icon_20x20');
+        wsFlashIcon('lan-letters-icon-16');
         wsHandleEvent(event);
       };
     }
@@ -226,11 +244,21 @@
       createTable([['Team',52.4],['Asgmt.',62.8],['Status',129.2],['Resource',118],['Prev.',60]],msg.teamsView,teamsDiv);
       createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewNotCompleted,assignmentsNotCompletedDiv);
       createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewCompleted,assignmentsCompletedDiv);      
-      assignedTeamsLabel.innerHTML="A:"+msg.assignedTeamsCount;
-      unassignedTeamsLabel.innerHTML="U:"+msg.unassignedTeamsCount;
-      assignedAssignmentsLabel.innerHTML="A:"+msg.assignedAssignmentsCount;
-      unassignedAssignmentsLabel.innerHTML="U:"+msg.unassignedAssignmentsCount;
-      completedAssignmentsLabel.innerHTML="C:"+msg.completedAssignmentsCount;
+      var ta="A:"+msg.assignedTeamsCount;
+      var tu="U:"+msg.unassignedTeamsCount;
+      var aa="A:"+msg.assignedAssignmentsCount;
+      var au="U:"+msg.unassignedAssignmentsCount;
+      var ac="C:"+msg.completedAssignmentsCount;
+      tALabelBot.innerHTML=ta;
+      tALabelRt.innerHTML=ta;
+      tULabelBot.innerHTML=tu;
+      tULabelRt.innerHTML=tu;
+      aALabelBot.innerHTML=aa;
+      aALabelRt.innerHTML=aa;
+      aULabelBot.innerHTML=au;
+      aULabelRt.innerHTML=au;
+      aCLabelBot.innerHTML=ac;
+      aCLabelRt.innerHTML=ac;
     };
 
     var widthMode="wide";
@@ -249,7 +277,9 @@
       abr=document.getElementById("aBtnBotRow");
       trt=document.getElementById("tBtnRightTable");
       tbr=document.getElementById("tBtnBotRow");
-      setWidthMode();
+      document.addEventListener("mouseleave", function(){goNarrow();});
+      goNarrow();
+      showAssignmentsView();
     }
 
     function onResize() {
@@ -259,6 +289,40 @@
       } else if (widthMode=="narrow" && w>wThreshold) {
         setWidthMode();
       }
+    }
+
+    function goWide() {
+      var al=screen.availLeft | 0;
+      var x1=window.screenX;
+      var w=window.outerWidth;
+      var x2=x1+w;
+      var lm=x1-al;
+      var rm=screen.width+al-x2;
+      if (rm<lm) {
+        window.moveTo(x1-(600-w),window.screenY);
+      }
+      window.resizeTo(600,window.outerHeight);
+      setWidthMode();
+    }
+
+    // if left edge of window is closer to left edge of screen
+    //  than right edge of window is to right edge of screen,
+    //  then collapse left (i.e. don't move left window edge;
+    //  move right window edge to the left); otherwise, collapse
+    //  right (i.e. don't move right window edge; move left window
+    //  edge to the right)
+    function goNarrow() {
+      var al=screen.availLeft | 0;
+      var x1=window.screenX;
+      var w=window.outerWidth;
+      var x2=x1+w;
+      var lm=x1-al;
+      var rm=screen.width+al-x2;
+      window.resizeTo(200,window.outerHeight);
+      if (rm<lm) {
+        window.moveTo(x1+(w-200),window.screenY);
+      }
+      setWidthMode();
     }
 
     function setWidthMode() {
@@ -288,7 +352,6 @@
     var assignmentsNotCompletedSortDir='asc';
     var assignmentsCompletedSortCol=0;
     var assignmentsCompletedSortDir='asc';
-
 
     // from https://stackoverflow.com/a/15164958
     function createTable(columnData,tableData,container) {
@@ -341,6 +404,7 @@
         });
         table.appendChild(header);
         var tableBody = document.createElement('tbody');
+        tableBody.addEventListener("mouseenter",function(){goWide();});
         // color mapping from https://dev.to/k_penguin_sato/use-lookup-tables-for-cleaning-up-your-js-ts-code-9gk
         // const statusToColor=(status)=>colorMap[status]||"gray"; // this line causes syntax error for IE
         const statusToColor=function(status) {return colorMap[status]||"gray";}
@@ -496,7 +560,7 @@
       }
     }
   </script>
-  <span id="buttonsDiv">
+  <div id="buttonsDiv">
     <button type="button" id="aBtn" onclick="showAssignmentsView()">
       <table id="aBtnTable">
         <tr class="btnTableRow">
@@ -516,13 +580,13 @@
           <td>
             <table id="aBtnRightTable">
               <tr>
-                <td id="aALabelRight" class="count">A:--</td>
+                <td id="aALabelRt" class="count">A:--</td>
               </tr>
               <tr>
-                <td id="aULabelRight" class="count">U:--</td>
+                <td id="aULabelRt" class="count">U:--</td>
               </tr>
               <tr>
-                <td id="aCLabelRight" class="count">C:--</td>
+                <td id="aCLabelRt" class="count">C:--</td>
               </tr>
             </table>
           </td>
@@ -547,21 +611,26 @@
           <td>
             <table id="tBtnRightTable">
               <tr>
-                <td id="tALabelRight" class="count">A:--</td>
+                <td id="tALabelRt" class="count">A:--</td>
               </tr>
               <tr>
-                <td id="tULabelRight" class="count">U:--</td>
+                <td id="tULabelRt" class="count">U:--</td>
               </tr>
             </table>
           </td>
         </tr>
       </table>
     </button>
-  </span>
+  </div>
+  <div id="toolbar">
+    <span id="wsIcon"></span>
+    <span id="lastChangeLabel">Waiting for data</span>
+    <button type="button" id="optionsButton"></button>   
+  </div>
   <div id='tablesDiv'>
-    <div id = 'teamsDiv'>Waiting for data</div>
+    <div id = 'teamsDiv'>&nbsp;</div>
     <div id = 'assignmentsDiv'>
-      <div id = 'assignmentsNotCompletedDiv'>Waiting for data</div>
+      <div id = 'assignmentsNotCompletedDiv'>&nbsp;</div>
       <div id = 'assignmentsCompletedDiv'>&nbsp;</div>
     </div>
   </div>
