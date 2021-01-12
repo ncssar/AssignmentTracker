@@ -354,6 +354,7 @@ class assignmentTrackerApp(App):
         box.add_widget(label)
         spinner=Spinner(text=ROLES[0],values=ROLES)
         spinner.bind(text=self.setNodeName)
+        self.setNodeName(spinner)
         box.add_widget(spinner)
         button=Button(text='OK')
         box.add_widget(button)

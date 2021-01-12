@@ -486,27 +486,26 @@ def tdbGetTeamsView():
 #  pairings, and there may be more than one entry per assignment, so, 
 #  use other db functions to get the accurate count of assigned assignments
 def tdbPushTables(teamsViewList=None,assignmentsViewList=None):
-    assignments=tdbGetAssignments() # get all assignments - not pairings
     if not teamsViewList:
         teamsViewList=tdbGetTeamsView()
     if not assignmentsViewList: # completed assignments should be part of assignmentsViewList
         assignmentsViewList=tdbGetAssignmentsView()
-    assignmentsViewNotCompletedList=[x for x in assignmentsViewList if x[2]!='COMPLETED']
+    teamsViewAssignedList=[x for x in teamsViewList if x[2]!='UNASSIGNED']
+    teamsViewUnassignedList=[x for x in teamsViewList if x[2]=='UNASSIGNED']
+    assignmentsViewAssignedList=[x for x in assignmentsViewList if x[2] not in ['UNASSIGNED','COMPLETED']]
+    assignmentsViewUnassignedList=[x for x in assignmentsViewList if x[2]=='UNASSIGNED']
     assignmentsViewCompletedList=[x for x in assignmentsViewList if x[2]=='COMPLETED']
-    unassignedTeamsCount=len([x for x in teamsViewList if x[2]=='UNASSIGNED'])
-    assignedTeamsCount=len(teamsViewList)-unassignedTeamsCount
-    unassignedAssignmentsCount=len([x for x in assignments if x['AssignmentStatus']=='UNASSIGNED'])
-    completedAssignmentsCount=len([x for x in assignments if x['AssignmentStatus']=='COMPLETED'])
-    assignedAssignmentsCount=len(assignments)-unassignedAssignmentsCount-completedAssignmentsCount
     d={
-        "teamsView":teamsViewList,
-        "assignmentsViewNotCompleted":assignmentsViewNotCompletedList,
+        "teamsViewAssigned":teamsViewAssignedList,
+        "teamsViewUnassigned":teamsViewUnassignedList,
+        "assignmentsViewAssigned":assignmentsViewAssignedList,
+        "assignmentsViewUnassigned":assignmentsViewUnassignedList,
         "assignmentsViewCompleted":assignmentsViewCompletedList,
-        "assignedTeamsCount":assignedTeamsCount,
-        "unassignedTeamsCount":unassignedTeamsCount,
-        "assignedAssignmentsCount":assignedAssignmentsCount,
-        "unassignedAssignmentsCount":unassignedAssignmentsCount,
-        "completedAssignmentsCount":completedAssignmentsCount}
+        "assignedTeamsCount":len(teamsViewAssignedList),
+        "unassignedTeamsCount":len(teamsViewUnassignedList),
+        "assignedAssignmentsCount":len(assignmentsViewAssignedList),
+        "unassignedAssignmentsCount":len(assignmentsViewUnassignedList),
+        "completedAssignmentsCount":len(assignmentsViewCompletedList)}
     if wsOk: # wsSend will send over URL or over pusher.com as appropriate
         wsSend(json.dumps(d))
     return(d)
