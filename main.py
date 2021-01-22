@@ -682,7 +682,7 @@ class assignmentTrackerApp(App):
         v=response['validate']
         tdbNewAssignmentFinalize(n,v['aid'],v['LastEditEpoch'])
 
-    def newPairing(self,assignmentName=None,teamName=None):
+    def newPairing(self):
         # if this is a repeat (same assignmentName and teamName as
         #  a previous pairing), don't make a new pairing, but instead
         #  change the status of the existing pairing from COMPLETED to
@@ -693,13 +693,20 @@ class assignmentTrackerApp(App):
         #  reflect reality just as well as keeping both rows.  Either
         #  option would be a bit confusing; hopefully this option is
         #  slightly less confusing.
-        if not assignmentName:
-            assignmentName=self.pairingDetailBeingShown[0]
-        if not teamName:
-            teamName=self.newPairingScreen.ids.teamSpinner.text.split()[0]
+        if 'Assignment' in self.newPairingScreen.ids.knownLabel.text:
+            assignmentName=self.newPairingScreen.ids.knownNameLabel.text
+            teamName=self.newPairingScreen.ids.unknownSpinner.text.split()[0]
+        else:
+            teamName=self.newPairingScreen.ids.knownNameLabel.text
+            assignmentName=self.newPairingScreen.ids.unknownSpinner.text.split()[0]
         Logger.info("pairing assignment "+str(assignmentName)+" with team "+str(teamName))
         aid=tdbGetAssignmentIDByName(assignmentName)
         tid=tdbGetTeamIDByName(teamName)
+        if aid<0 or tid<0:
+            self.textpopup(
+                    title='Database Error',
+                    text='Database IDs were never updated; this may be due to a server communication error.  Cannot create a pairing.\n'+assignmentName+':'+str(aid)+'  '+teamName+':'+str(tid))
+            return -1
         prevID=tdbGetPairingIDByNames(assignmentName,teamName,previousOnly=True)
         Logger.info("Checking for previous pairings with same assignment and same team: "+str(prevID))
         if prevID: # this is a repeat; reuse the existing ID rather than making a new pairing
@@ -720,7 +727,7 @@ class assignmentTrackerApp(App):
         self.textpopup(
                 title='New Pairing',
                 text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\n'+NEW_PAIRING_POPUP_TEXT)
-        self.showAssignments() # close the new pairing dialog after creating the pairing; not likely to need to pair another team
+        self.showPrevious() # close the new pairing dialog after creating the pairing; not likely to need to pair another team
         # avoid sending multiple requests back to back, since this can create race conditions
         #  and html flickers with clients receiving multiple different websocket messages
         #  in rapid succession; instead, make the new pairings API handler set the team
@@ -792,28 +799,39 @@ class assignmentTrackerApp(App):
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.text='[size=35]Assignments\n[size=12]'+assignmentsCountText
         self.assignmentsScreen.ids.viewSwitcher.ids.assignmentsViewButton.line_height=0.7
 
-    def showPairingDetail(self,assignmentName,teamName=None):
+    def showPairingDetail(self,assignmentName=None,teamName=None):
         Logger.info('showPairingDetail called:'+str(assignmentName)+' : '+str(teamName))
-        if teamName:
-            pid=tdbGetPairingIDByNames(assignmentName,teamName)
-            status=tdbGetPairings(pid)[0].get('PairingStatus',None)
-            teamResource=tdbGetTeamResourceByName(teamName)
-            if status=='CURRENT':
-                status=tdbGetTeamStatusByName(teamName)
-                self.pairingDetailScreen.ids.statusBox.visible=True
-            else:
-                status='COMPLETED'
+        if assignmentName:
+            if teamName: # assignment and team specified - it's a pairing
+                pid=tdbGetPairingIDByNames(assignmentName,teamName)
+                status=tdbGetPairings(pid)[0].get('PairingStatus',None)
+                teamResource=tdbGetTeamResourceByName(teamName)
+                if status=='CURRENT':
+                    status=tdbGetTeamStatusByName(teamName)
+                    self.pairingDetailScreen.ids.statusBox.visible=True
+                else:
+                    status='COMPLETED'
+                    self.pairingDetailScreen.ids.statusBox.visible=False
+                self.pairingDetailScreen.ids.intendedResourceLabel.text=''
+                if self.previousScreen=='assignmentsScreen':
+                    self.pairingDetailScreen.ids.pairButton.text='Assign another team to this assignment'
+                else:
+                    self.pairingDetailScreen.ids.pairButton.text='Assign this team to another assignment'
+            else: # assignment specified, but not team
+                teamName='--'
+                teamResource=''
+                status='UNASSIGNED'
+                intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
+                self.pairingDetailScreen.ids.intendedResourceLabel.text='Intended for: '+intendedResource
                 self.pairingDetailScreen.ids.statusBox.visible=False
-            self.pairingDetailScreen.ids.intendedResourceLabel.text=''
-            self.pairingDetailScreen.ids.pairButton.text='Assign another team to this assignment'
-        else:
-            teamName='--'
-            teamResource=''
+                self.pairingDetailScreen.ids.pairButton.text='Assign a team to this assignment'
+        elif teamName: # team specified, but not assignment
+            assignmentName='--'
+            intendedResource=''
             status='UNASSIGNED'
-            intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
-            self.pairingDetailScreen.ids.intendedResourceLabel.text='Intended for: '+intendedResource
+            teamResource=tdbGetTeamResourceByName(teamName)
             self.pairingDetailScreen.ids.statusBox.visible=False
-            self.pairingDetailScreen.ids.pairButton.text='Assign a team to this assignment'
+            self.pairingDetailScreen.ids.pairButton.text='Assign this team to an assignment'
         self.pairingDetailScreen.ids.assignmentNameLabel.text=assignmentName
         self.pairingDetailScreen.ids.teamNameLabel.text=teamName
         self.pairingDetailScreen.ids.teamResourceLabel.text=teamResource
@@ -822,6 +840,12 @@ class assignmentTrackerApp(App):
         self.pairingDetailStatusUpdate()
         self.pairingDetailHistoryUpdate()
         self.sm.current='pairingDetailScreen'
+
+    def showPrevious(self):
+        if self.previousScreen=='teamsScreen':
+            self.showTeams()
+        elif self.previousScreen=='assignmentsScreen':
+            self.showAssignments()
 
     def pairingDetailStatusUpdate(self):
         teamName=self.pairingDetailBeingShown[1]
@@ -858,50 +882,110 @@ class assignmentTrackerApp(App):
         self.updateNewAssignmentNameSpinner()
         self.sm.current='newAssignmentScreen'
 
-    def showNewPairing(self,assignmentName):
-        Logger.info('showPairing called: '+str(assignmentName))
-        self.newPairingScreen.ids.assignmentNameLabel.text=assignmentName
-        intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
-        self.newPairingScreen.ids.intendedResourceLabel.text=intendedResource
-        status=tdbGetAssignmentStatusByName(assignmentName)
-        if status not in ['UNASSIGNED','COMPLETED']:
-            status='ASSIGNED to team(s):\n'
-            pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
-            Logger.info('  pairings:'+str(pairings))
-            tids=[pairing.get('tid',None) for pairing in pairings]
-            Logger.info('  tids:'+str(tids))
-            teamNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
-            Logger.info('  teamNames:'+str(teamNames))
-            status+=','.join(teamNames)
-        self.newPairingScreen.ids.currentlyLabel.text=status
-        # Logger.info("teamsList:"+str(self.teamsList))
-        part1=[] # unassigned teams, same resource type as intended resource
-        part2=[] # unassigned teams, other resource types
-        part3=[] # assigned teams, same resource type as intended resource
-        part4=[] # assigned teams, other resource types
-        for team in self.teamsList:
-            entryText=team[0]+' : '+team[3]
-            if team[2]=='UNASSIGNED':
-                entryText+=' : UNASSIGNED'
-                if team[3]==intendedResource:
-                    part1.append(entryText)
-                else:
-                    part2.append(entryText)
-            elif assignmentName not in team[1].split(','): # don't list team(s) already paired to this assignment!
-                entryText+=' : ASSIGNED to '+team[1]
-                if team[3]==intendedResource:
-                    part3.append(entryText)
-                else:
-                    part4.append(entryText)
-        theList=part1+part2+part3+part4
-        self.newPairingScreen.ids.teamSpinner.values=theList
-        if theList:
-            self.newPairingScreen.ids.teamSpinner.text=theList[0]
-            self.newPairingScreen.ids.pairButton.disabled=False
-        else:
-            # could show a warning here and disallow pairing before the screen raises
-            self.newPairingScreen.ids.teamSpinner.text='No teams available'
-            self.newPairingScreen.ids.pairButton.disabled=True
+    def showNewPairing(self):
+        if self.previousScreen=='assignmentsScreen': # assignment=fixed, team=selectable
+            assignmentName=self.pairingDetailScreen.ids.assignmentNameLabel.text
+            self.newPairingScreen.ids.knownLabel.text='Assignment:'
+            self.newPairingScreen.ids.knownNameLabel.text=assignmentName
+            self.newPairingScreen.ids.resourceLabel.text='Intended For:'
+            intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
+            self.newPairingScreen.ids.resourceNameLabel.text=intendedResource
+            status=tdbGetAssignmentStatusByName(assignmentName)
+            if status not in ['UNASSIGNED','COMPLETED']:
+                status='ASSIGNED to:\n'
+                pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
+                Logger.info('  pairings:'+str(pairings))
+                tids=[pairing.get('tid',None) for pairing in pairings]
+                Logger.info('  tids:'+str(tids))
+                teamNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
+                Logger.info('  teamNames:'+str(teamNames))
+                status+=','.join(teamNames)
+            self.newPairingScreen.ids.currentlyLabel.text=status
+            # Logger.info("teamsList:"+str(self.teamsList))
+            part1=[] # unassigned teams, same resource type as intended resource
+            part2=[] # unassigned teams, other resource types
+            part3=[] # assigned teams, same resource type as intended resource
+            part4=[] # assigned teams, other resource types
+            for team in self.teamsList:
+                entryText=team[0]+' : '+team[3]
+                if team[2]=='UNASSIGNED':
+                    entryText+=' : UNASSIGNED'
+                    if team[3]==intendedResource:
+                        part1.append(entryText)
+                    else:
+                        part2.append(entryText)
+                elif assignmentName not in team[1].split(','): # don't list team(s) already paired to this assignment!
+                    entryText+=' : ASSIGNED to '+team[1]
+                    if team[3]==intendedResource:
+                        part3.append(entryText)
+                    else:
+                        part4.append(entryText)
+            theList=part1+part2+part3+part4
+            self.newPairingScreen.ids.unknownSpinner.values=theList
+            if theList:
+                self.newPairingScreen.ids.unknownSpinner.text=theList[0]
+                self.newPairingScreen.ids.pairButton.disabled=False
+            else:
+                # could show a warning here and disallow pairing before the screen raises
+                self.newPairingScreen.ids.unknownSpinner.text='No teams available'
+                self.newPairingScreen.ids.pairButton.disabled=True
+        else: # team=fixed, assignment=selectable
+            teamName=self.pairingDetailScreen.ids.teamNameLabel.text
+            self.newPairingScreen.ids.knownLabel.text='Team:'
+            self.newPairingScreen.ids.knownNameLabel.text=teamName
+            self.newPairingScreen.ids.resourceLabel.text='Resource:'
+            resource=tdbGetTeamResourceByName(teamName)
+            self.newPairingScreen.ids.resourceNameLabel.text=resource
+            status=tdbGetTeamStatusByName(teamName)
+            assignmentNames=[]
+            if status not in ['UNASSIGNED','COMPLETED']:
+                status='ASSIGNED to:\n'
+                pairings=tdbGetPairingsByTeam(tdbGetTeamIDByName(teamName),currentOnly=True)
+                Logger.info('  pairings:'+str(pairings))
+                aids=[pairing.get('aid',None) for pairing in pairings]
+                Logger.info('  aids:'+str(aids))
+                assignmentNames=[tdbGetAssignments(aid)[0]['AssignmentName'] for aid in aids]
+                Logger.info('  assignmentNames:'+str(assignmentNames))
+                status+=','.join(assignmentNames)
+            self.newPairingScreen.ids.currentlyLabel.text=status
+            # keep in mind that self.assignmentsList is really a list of pairings
+            #  that also includes unassigned assignments; so the same assignment could
+            #  appear in multiple entries
+            # Logger.info("assignmentsList:"+str(self.assignmentsList))
+            part1=[] # unassigned assignments, same resource type
+            part2=[] # unassigned assignments, other resource types
+            part3=[] # assigned assignments, same resource type
+            part4=[] # assigned assignments, other resource types
+            for assignment in self.assignmentsList:
+                [aName,tName,aStat,aRes]=assignment
+                entryText=aName+' : '+aRes
+                if aStat=='UNASSIGNED':
+                    entryText+=' : UNASSIGNED'
+                    if aRes==resource:
+                        part1.append(entryText)
+                    else:
+                        part2.append(entryText)
+                elif aName not in assignmentNames: # don't list assignment(s) already paired to this team!
+                    # also, assignments already paired to multiple teams should only be one entry
+                    pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(aName),currentOnly=True)
+                    tids=[pairing.get('tid',None) for pairing in pairings]
+                    tNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
+                    tNameText=','.join(tNames)
+                    entryText+=' : ASSIGNED to '+tNameText
+                    assignmentNames.append(aName) # don't process it again
+                    if aRes==resource:
+                        part3.append(entryText)
+                    else:
+                        part4.append(entryText)
+            theList=part1+part2+part3+part4
+            self.newPairingScreen.ids.unknownSpinner.values=theList
+            if theList:
+                self.newPairingScreen.ids.unknownSpinner.text=theList[0]
+                self.newPairingScreen.ids.pairButton.disabled=False
+            else:
+                # could show a warning here and disallow pairing before the screen raises
+                self.newPairingScreen.ids.unknownSpinner.text='No assignments available'
+                self.newPairingScreen.ids.pairButton.disabled=True
         self.sm.current='newPairingScreen'
 
     def changeTeamStatus(self,teamName=None,status=None):
@@ -977,6 +1061,7 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
         if super(SelectableLabel, self).on_touch_down(touch):
             return True
         if self.collide_point(*touch.pos) and self.selectable:
+            theApp.previousScreen=theApp.sm.current
             if theApp.sm.current=='assignmentsScreen':
                 colCount=theApp.assignmentsScreen.ids.assignmentsLayout.cols
                 Logger.info("Assignments list item tapped: index="+str(self.index)+":"+str(theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]))
@@ -987,14 +1072,18 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
                 teamName=str(row[1]["text"])
                 if teamName=='--':
                     teamName=None
-                # bg=theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]['bg']
-                # if bg[1]==0:
-                #     newBg=(0,0.8,0.1,0.7)
-                # else:
-                #     newBg=(0,0,0,0)
-                # for i in list(range(rowNum*colCount,(rowNum+1)*colCount)):
-                #     theApp.assignmentsScreen.ids.assignmentsRV.data[i]['bg']=newBg
-                # theApp.assignmentsScreen.ids.assignmentsRV.refresh_from_data()
+                theApp.showPairingDetail(assignmentName,teamName)
+                return True
+            elif theApp.sm.current=='teamsScreen':
+                colCount=theApp.teamsScreen.ids.teamsLayout.cols
+                Logger.info("Teams list item tapped: index="+str(self.index)+":"+str(theApp.teamsScreen.ids.teamsRV.data[self.index]))
+                rowNum=int(self.index/colCount)
+                row=theApp.teamsScreen.ids.teamsRV.data[rowNum*colCount:(rowNum+1)*colCount]
+                Logger.info("   selected row:"+str(row))
+                teamName=str(row[0]["text"])
+                assignmentName=str(row[1]["text"])
+                if assignmentName=='--':
+                    assignmentName=None
                 theApp.showPairingDetail(assignmentName,teamName)
                 return True
         #     else:

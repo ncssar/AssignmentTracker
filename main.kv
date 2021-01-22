@@ -471,7 +471,7 @@
                 Button:
                     id: pairButton
                     text: 'Assign a team to this assignment'
-                    on_press: app.showNewPairing(app.pairingDetailBeingShown[0])
+                    on_press: app.showNewPairing()
             # BoxLayout:
             #     orientation: 'horizontal'
             #     id: newPairingBox
@@ -506,7 +506,7 @@
                 halign: 'left'
         Button:
             text: 'Close'
-            on_press: app.showAssignments()
+            on_press: app.showPrevious()
 
 <NewTeamScreen>:
     BoxLayout:
@@ -581,24 +581,26 @@
             size_hint_y: 0.1
         BoxLayout:
             orientation: 'horizontal'
-            id: assignmentBox
+            id: knownBox
             size_hint_y: 0.2
             Label:
+                id: knownLabel
                 size_hint_x: 0.4
-                text: 'Assignment:'
+                text: 'Known:'
             Label:
-                id: assignmentNameLabel
+                id: knownNameLabel
                 text: '--'
                 font_size: 60
         BoxLayout:
             orientation: 'horizontal'
-            id: intendedResourceBox
+            id: resourceBox
             size_hint_y: 0.15
             Label:
+                id: resourceLabel
                 size_hint_x: 0.4
-                text: 'Intended for:'
+                text: 'Resource:'
             Label:
-                id: intendedResourceLabel
+                id: resourceNameLabel
                 text: ''
                 font_size: 30
         BoxLayout:
@@ -614,7 +616,7 @@
                 font_size: 30
         BoxLayout:
             orientation: 'horizontal'
-            id: teamBox
+            id: unknownBox
             size_hint_y: 0.2
             Label:
                 size_hint_x: 0.4
@@ -622,7 +624,7 @@
             Spinner:
                 markup: True
                 halign: 'left'
-                id: teamSpinner
+                id: unknownSpinner
                 text: '101'
                 values: ['101','102']
         Button:
@@ -634,4 +636,4 @@
         Button:
             size_hint_y: 0.1
             text: 'Cancel'
-            on_press: app.showAssignments()
+            on_press: app.showPrevious()
