@@ -398,8 +398,8 @@
           'UNASSIGNED': '#cfc',
           'ASSIGNED': '#fff',
           'WORKING': '#fff',
-          'ENROUTE TO IC': '#fcc',
-          'DEBRIEFING': '#ccf',
+          'ENROUTE TO IC': '#ccf',
+          'DEBRIEFING': '#fcc',
           'COMPLETED': '#bbb'};
     
     var teamsAssignedSortCol=0;
@@ -509,6 +509,8 @@
           sd=assignmentsCompletedSortDir;
         }
         sortTable(id,sc,sd);
+      } else {
+        container.innerHTML=""
       }
     }
 

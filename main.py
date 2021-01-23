@@ -176,13 +176,13 @@ class assignmentTrackerApp(App):
         self.pairingHistoryRVList=[1,2,3,4,5]
         self.apiOKText="<h1>AssignmentTracker Database API</h1>"
         self.lastSyncTimeStamp=0
-
+        self.resourceTypes=['Ground Type 2','Ground Type 1','OHV','K9 (Area)','K9 (Trailing)']
         self.lan=False
         self.cloud=False
         self.localhost=False
 
         self.nodeName='OBSERVER'
-        self.callsignPool=list(map(str,range(101,200)))
+        self.teamNamePool=list(map(str,range(101,200)))
         self.assignmentNamePool=[chr(a)+chr(b) for a in range(65,91) for b in range(65,91)] # AA..AZ,BA..BZ,..
 
         # for each screen, example myScreen1 as instance of class myScreen:
@@ -566,8 +566,8 @@ class assignmentTrackerApp(App):
                         tid=e['tid'],
                         lastEditEpoch=e['LastEditEpoch'])
                 Logger.info('   creating a new team.  response:'+str(r))
-            if e['TeamName'] in self.callsignPool:
-                self.callsignPool.remove(e['TeamName'])
+            if e['TeamName'] in self.teamNamePool:
+                self.teamNamePool.remove(e['TeamName'])
         for e in result['Assignments']:
             # fields to update: AssignmentStatus, IntendedResource, LastEditEpoch
             #  (AssignmentName can never be changed)
@@ -636,8 +636,8 @@ class assignmentTrackerApp(App):
 
     def newTeam(self,name=None,resource=None,doToast=True):
         name=name or self.newTeamScreen.ids.nameSpinner.text
-        if name in self.callsignPool:
-            self.callsignPool.remove(name)
+        if name in self.teamNamePool:
+            self.teamNamePool.remove(name)
         resource=resource or self.newTeamScreen.ids.resourceSpinner.text
         r=tdbNewTeam(name,resource)
         n=r['validate']['n']
@@ -743,8 +743,8 @@ class assignmentTrackerApp(App):
         tdbNewPairingFinalize(n,v['pid'],v['LastEditEpoch'])
 
     def updateNewTeamNameSpinner(self):
-        self.newTeamScreen.ids.nameSpinner.values=self.callsignPool[0:8]
-        self.newTeamScreen.ids.nameSpinner.text=self.callsignPool[0]
+        self.newTeamScreen.ids.nameSpinner.values=self.teamNamePool[0:8]
+        self.newTeamScreen.ids.nameSpinner.text=self.teamNamePool[0]
     
     def updateNewAssignmentNameSpinner(self):
         self.newAssignmentScreen.ids.nameSpinner.values=self.assignmentNamePool[0:8]
@@ -817,6 +817,10 @@ class assignmentTrackerApp(App):
                     self.pairingDetailScreen.ids.pairButton.text='Assign another team to this assignment'
                 else:
                     self.pairingDetailScreen.ids.pairButton.text='Assign this team to another assignment'
+                self.pairingDetailScreen.ids.assignmentEditButton.visible=False
+                self.pairingDetailScreen.ids.assignmentDeleteButton.visible=False
+                self.pairingDetailScreen.ids.teamEditButton.visible=False
+                self.pairingDetailScreen.ids.teamDeleteButton.visible=False
             else: # assignment specified, but not team
                 teamName='--'
                 teamResource=''
@@ -825,6 +829,10 @@ class assignmentTrackerApp(App):
                 self.pairingDetailScreen.ids.intendedResourceLabel.text='Intended for: '+intendedResource
                 self.pairingDetailScreen.ids.statusBox.visible=False
                 self.pairingDetailScreen.ids.pairButton.text='Assign a team to this assignment'
+                self.pairingDetailScreen.ids.assignmentEditButton.visible=True
+                self.pairingDetailScreen.ids.assignmentDeleteButton.visible=True
+                self.pairingDetailScreen.ids.teamEditButton.visible=False
+                self.pairingDetailScreen.ids.teamDeleteButton.visible=False
         elif teamName: # team specified, but not assignment
             assignmentName='--'
             intendedResource=''
@@ -832,6 +840,11 @@ class assignmentTrackerApp(App):
             teamResource=tdbGetTeamResourceByName(teamName)
             self.pairingDetailScreen.ids.statusBox.visible=False
             self.pairingDetailScreen.ids.pairButton.text='Assign this team to an assignment'
+            self.pairingDetailScreen.ids.intendedResourceLabel.text=''
+            self.pairingDetailScreen.ids.assignmentEditButton.visible=False
+            self.pairingDetailScreen.ids.assignmentDeleteButton.visible=False
+            self.pairingDetailScreen.ids.teamEditButton.visible=True
+            self.pairingDetailScreen.ids.teamDeleteButton.visible=True
         self.pairingDetailScreen.ids.assignmentNameLabel.text=assignmentName
         self.pairingDetailScreen.ids.teamNameLabel.text=teamName
         self.pairingDetailScreen.ids.teamResourceLabel.text=teamResource
@@ -894,11 +907,11 @@ class assignmentTrackerApp(App):
             if status not in ['UNASSIGNED','COMPLETED']:
                 status='ASSIGNED to:\n'
                 pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
-                Logger.info('  pairings:'+str(pairings))
+                # Logger.info('  pairings:'+str(pairings))
                 tids=[pairing.get('tid',None) for pairing in pairings]
-                Logger.info('  tids:'+str(tids))
+                # Logger.info('  tids:'+str(tids))
                 teamNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
-                Logger.info('  teamNames:'+str(teamNames))
+                # Logger.info('  teamNames:'+str(teamNames))
                 status+=','.join(teamNames)
             self.newPairingScreen.ids.currentlyLabel.text=status
             # Logger.info("teamsList:"+str(self.teamsList))
@@ -941,11 +954,11 @@ class assignmentTrackerApp(App):
             if status not in ['UNASSIGNED','COMPLETED']:
                 status='ASSIGNED to:\n'
                 pairings=tdbGetPairingsByTeam(tdbGetTeamIDByName(teamName),currentOnly=True)
-                Logger.info('  pairings:'+str(pairings))
+                # Logger.info('  pairings:'+str(pairings))
                 aids=[pairing.get('aid',None) for pairing in pairings]
-                Logger.info('  aids:'+str(aids))
+                # Logger.info('  aids:'+str(aids))
                 assignmentNames=[tdbGetAssignments(aid)[0]['AssignmentName'] for aid in aids]
-                Logger.info('  assignmentNames:'+str(assignmentNames))
+                # Logger.info('  assignmentNames:'+str(assignmentNames))
                 status+=','.join(assignmentNames)
             self.newPairingScreen.ids.currentlyLabel.text=status
             # keep in mind that self.assignmentsList is really a list of pairings
@@ -958,25 +971,26 @@ class assignmentTrackerApp(App):
             part4=[] # assigned assignments, other resource types
             for assignment in self.assignmentsList:
                 [aName,tName,aStat,aRes]=assignment
-                entryText=aName+' : '+aRes
-                if aStat=='UNASSIGNED':
-                    entryText+=' : UNASSIGNED'
-                    if aRes==resource:
-                        part1.append(entryText)
-                    else:
-                        part2.append(entryText)
-                elif aName not in assignmentNames: # don't list assignment(s) already paired to this team!
-                    # also, assignments already paired to multiple teams should only be one entry
-                    pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(aName),currentOnly=True)
-                    tids=[pairing.get('tid',None) for pairing in pairings]
-                    tNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
-                    tNameText=','.join(tNames)
-                    entryText+=' : ASSIGNED to '+tNameText
-                    assignmentNames.append(aName) # don't process it again
-                    if aRes==resource:
-                        part3.append(entryText)
-                    else:
-                        part4.append(entryText)
+                if aStat!='COMPLETED':
+                    entryText=aName+' : '+aRes
+                    if aStat=='UNASSIGNED':
+                        entryText+=' : UNASSIGNED'
+                        if aRes==resource:
+                            part1.append(entryText)
+                        else:
+                            part2.append(entryText)
+                    elif aName not in assignmentNames: # don't list assignment(s) already paired to this team!
+                        # also, assignments already paired to multiple teams should only be one entry
+                        pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(aName),currentOnly=True)
+                        tids=[pairing.get('tid',None) for pairing in pairings]
+                        tNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
+                        tNameText=','.join(tNames)
+                        entryText+=' : ASSIGNED to '+tNameText
+                        assignmentNames.append(aName) # don't process it again
+                        if aRes==resource:
+                            part3.append(entryText)
+                        else:
+                            part4.append(entryText)
             theList=part1+part2+part3+part4
             self.newPairingScreen.ids.unknownSpinner.values=theList
             if theList:
@@ -988,12 +1002,151 @@ class assignmentTrackerApp(App):
                 self.newPairingScreen.ids.pairButton.disabled=True
         self.sm.current='newPairingScreen'
 
+    def assignmentEdit(self):
+        box=BoxLayout(orientation='vertical')
+        popup=PopupWithIcons(
+                title='Edit Assignment',
+                content=box,
+                size_hint=(0.8,None),
+                background_color=(0,0,0,0.5))
+        assignmentName=self.pairingDetailScreen.ids.assignmentNameLabel.text
+        aid=tdbGetAssignmentIDByName(assignmentName)
+        intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
+        assignmentNameLabel=Label(text=assignmentName)
+        box.add_widget(assignmentNameLabel)
+        intendedResourceBox=BoxLayout(orientation='horizontal')
+        intendedResourceLabel=Label(text='Intended for:',size_hint_x=0.4)
+        intendedResourceBox.add_widget(intendedResourceLabel)
+        intendedResourceSpinner=Spinner(text=intendedResource,values=self.resourceTypes)
+        intendedResourceBox.add_widget(intendedResourceSpinner)
+        box.add_widget(intendedResourceBox)
+        okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
+        okButton=Button(text='OK')
+        def assignmentEditAccept(*args):
+            newIR=intendedResourceSpinner.text
+            tdbSetAssignmentIntendedResourceByID(aid,newIR)
+            self.sendRequest("api/v1/assignments/"+str(aid)+"/intendedResource","PUT",{"IntendedResource":str(newIR)})
+            self.pairingDetailScreen.ids.intendedResourceLabel.text='Intended for: '+str(newIR)
+            self.pairingDetailHistoryUpdate()
+        okButton.bind(on_release=assignmentEditAccept)
+        okButton.bind(on_release=popup.dismiss)
+        cancelButton=Button(text='Cancel')
+        cancelButton.bind(on_release=popup.dismiss)
+        okCancelBox.add_widget(okButton)
+        okCancelBox.add_widget(cancelButton)
+        box.add_widget(okCancelBox)
+        popup.height=popup.content.height+130
+        popup.open()
+
+    def assignmentDelete(self):
+        box=BoxLayout(orientation='vertical')
+        popup=PopupWithIcons(
+                title='Delete Assignment',
+                content=box,
+                size_hint=(0.8,None),
+                background_color=(0,0,0,0.5))
+        assignmentName=self.pairingDetailScreen.ids.assignmentNameLabel.text
+        aid=tdbGetAssignmentIDByName(assignmentName)
+        confirmLabel=Label(text='Really delete assignment '+assignmentName+'?')
+        box.add_widget(confirmLabel)
+        yesNoBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
+        yesButton=Button(text='Yes')
+        def assignmentDeleteAccept(*args):
+            tdbDeleteAssignment(aid=aid)
+            self.assignmentNamePool.append(assignmentName)
+            self.assignmentNamePool.sort()
+            self.sendRequest("api/v1/assignments/"+str(aid)+"/delete","PUT")
+            self.showPrevious()
+        yesButton.bind(on_release=assignmentDeleteAccept)
+        yesButton.bind(on_release=popup.dismiss)
+        noButton=Button(text='No')
+        noButton.bind(on_release=popup.dismiss)
+        yesNoBox.add_widget(yesButton)
+        yesNoBox.add_widget(noButton)
+        box.add_widget(yesNoBox)
+        popup.height=popup.content.height+130
+        popup.open()
+
+    def teamEdit(self):
+        box=BoxLayout(orientation='vertical')
+        popup=PopupWithIcons(
+                title='Edit Team',
+                content=box,
+                size_hint=(0.8,None),
+                background_color=(0,0,0,0.5))
+        teamName=self.pairingDetailScreen.ids.teamNameLabel.text
+        tid=tdbGetTeamIDByName(teamName)
+        resource=tdbGetTeamResourceByName(teamName)
+        medical='NO' # hardcode for now, until medical is enabled throughout the workflow
+        teamNameLabel=Label(text=teamName)
+        box.add_widget(teamNameLabel)
+        resourceBox=BoxLayout(orientation='horizontal')
+        resourceLabel=Label(text='Resource:',size_hint_x=0.4)
+        resourceBox.add_widget(resourceLabel)
+        resourceSpinner=Spinner(text=resource,values=self.resourceTypes)
+        resourceBox.add_widget(resourceSpinner)
+        box.add_widget(resourceBox)
+        medicalBox=BoxLayout(orientation='horizontal')
+        medicalLabel=Label(text='Medical:',size_hint_x=0.4)
+        medicalBox.add_widget(medicalLabel)
+        medicalSpinner=Spinner(text=medical,values=['YES','NO'])
+        medicalBox.add_widget(medicalSpinner)
+        box.add_widget(medicalBox)
+        okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
+        okButton=Button(text='OK')
+        def teamEditAccept(*args):
+            newR=resourceSpinner.text
+            tdbSetTeamResourceByID(tid,newR)
+            self.sendRequest("api/v1/teams/"+str(tid)+"/resource","PUT",{"Resource":str(newR)})
+            self.pairingDetailScreen.ids.teamResourceLabel.text=str(newR)
+            self.pairingDetailHistoryUpdate()
+        okButton.bind(on_release=teamEditAccept)
+        okButton.bind(on_release=popup.dismiss)
+        cancelButton=Button(text='Cancel')
+        cancelButton.bind(on_release=popup.dismiss)
+        okCancelBox.add_widget(okButton)
+        okCancelBox.add_widget(cancelButton)
+        box.add_widget(okCancelBox)
+        popup.height=popup.content.height+130
+        popup.open()
+
+    def teamDelete(self):
+        box=BoxLayout(orientation='vertical')
+        popup=PopupWithIcons(
+                title='Delete Team',
+                content=box,
+                size_hint=(0.8,None),
+                background_color=(0,0,0,0.5))
+        teamName=self.pairingDetailScreen.ids.teamNameLabel.text
+        tid=tdbGetTeamIDByName(teamName)
+        confirmLabel=Label(text='Really delete team '+teamName+'?')
+        box.add_widget(confirmLabel)
+        yesNoBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
+        yesButton=Button(text='Yes')
+        def teamDeleteAccept(*args):
+            tdbDeleteTeam(tid=tid)
+            self.teamNamePool.append(teamName)
+            self.teamNamePool.sort()
+            self.sendRequest("api/v1/teams/"+str(tid)+"/delete","PUT")
+            self.showPrevious()
+        yesButton.bind(on_release=teamDeleteAccept)
+        yesButton.bind(on_release=popup.dismiss)
+        noButton=Button(text='No')
+        noButton.bind(on_release=popup.dismiss)
+        yesNoBox.add_widget(yesButton)
+        yesNoBox.add_widget(noButton)
+        box.add_widget(yesNoBox)
+        popup.height=popup.content.height+130
+        popup.open()
+
     def changeTeamStatus(self,teamName=None,status=None):
         if not teamName:
             teamName=self.pairingDetailBeingShown[1]
         if not status:
             status=self.pairingDetailScreen.ids.statusSpinner.text
         if status=='DONE': # changing to DONE from pairing detail screen will 'close out' the current pairing
+            # note, when an pairing changes to COMPLETED, its team name and (team) resource
+            #  fields should be saved as strings, in case the team is later deleted
             [assignmentName,teamName]=self.pairingDetailBeingShown
             # 1. set pairing status to PREVIOUS
             pid=tdbGetPairingIDByNames(assignmentName,teamName)

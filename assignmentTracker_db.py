@@ -59,7 +59,9 @@ PAIRING_COLS=[
     ["aid","INTEGER"],
     ["tid","INTEGER"],
     ["PairingStatus","TEXT DEFAULT 'CURRENT'"],  # CURRENT or PREVIOUS
-    ["LastEditEpoch","REAL"]]
+    ["LastEditEpoch","REAL"],
+    ["NameSave","TEXT"],
+    ["ResourceSave","TEXT"]]
 
 # History table: all activities are recorded in one table; each entry
 #   has columns for aid, tid, Entry, RecordedBy, Epoch;
@@ -523,8 +525,7 @@ def tdbGetAssignments(aid=None,since=None):
             condition=condition))
 
 def tdbGetAssignmentsView():
-    # note that this is really a list of pairings (one pairing per row)
-    # print('******************** tdbGetAssignmentsView called')
+    # note that this is really a list of pairings (one pairing per row), unpaired assignments, and completed assignments
     assignmentsList=[]
     previousAssignments=[]
     tdbAssignments=tdbGetAssignments()
@@ -533,21 +534,19 @@ def tdbGetAssignmentsView():
         aid=entry['aid']
         assignmentName=entry['AssignmentName']
         assignmentStatus=entry['AssignmentStatus']
-        previous=[]
         current=[]
         pairings=[x for x in tdbPairings if x['aid']==aid] # pairings that include this assignment
         if pairings:
+            print("  pairings:"+str(pairings))
             for pairing in pairings:
                 if pairing['PairingStatus']=='PREVIOUS':
-                    previous.append(tdbGetTeamNameByID(pairing['tid']))
+                    previousAssignments.append([assignmentName,pairing['NameSave'],'COMPLETED',pairing['ResourceSave']])
                 else:
                     current.append(tdbGetTeamNameByID(pairing['tid']))
         else:
             assignmentsList.append([assignmentName,'--',assignmentStatus,tdbGetAssignmentIntendedResourceByName(assignmentName)])
         for teamName in current:
             assignmentsList.append([assignmentName,teamName,tdbGetTeamStatusByName(teamName),tdbGetTeamResourceByName(teamName)])
-        for teamName in previous:
-            previousAssignments.append([assignmentName,teamName,'COMPLETED',tdbGetTeamResourceByName(teamName)])
     assignmentsList+=previousAssignments # list completed assignments at the end, until a separate list display is arranged
     return assignmentsList
     
@@ -598,6 +597,9 @@ def tdbSetPairingStatusByID(pid,status):
         tdbAddHistoryEntry(assignmentName+'+'+teamName+' -> '+status,tid=tid,aid=aid)
     # what history entries if any should happen here?
     q("UPDATE 'Pairings' SET PairingStatus = '"+str(status)+"' WHERE pid = '"+str(pid)+"';")
+    if status=='PREVIOUS':
+        resource=tdbGetTeamResourceByName(teamName)
+        q("UPDATE 'Pairings' SET NameSave = '"+str(teamName)+"', ResourceSave = '"+str(resource)+"' WHERE pid = '"+str(pid)+"';")
     r=q("SELECT * FROM 'Pairings' WHERE pid = "+str(pid)+";")
     if r:
         tdbUpdateLastEditEpoch(pid=pid)
@@ -643,6 +645,68 @@ def tdbSetAssignmentStatusByID(aid,status,push=True):
 def tdbSetAssignmentStatusByName(assignmentName,status,push=True):
     aid=tdbGetAssignmentIDByName(assignmentName)
     tdbSetAssignmentStatusByID(aid,status,push)
+
+def tdbSetAssignmentIntendedResourceByID(aid,intendedResource,push=True):
+    if host:
+        tdbAddHistoryEntry(tdbGetAssignmentNameByID(aid)+' -> '+intendedResource,aid=aid,recordedBy='SYSTEM')
+    q("UPDATE 'Assignments' SET IntendedResource = '"+str(intendedResource)+"' WHERE aid = '"+str(aid)+"';")
+    r=q("SELECT * FROM 'Assignments' WHERE aid = "+str(aid)+";")
+    if r:
+        tdbUpdateLastEditEpoch(aid=aid)
+        validate=r[0]
+        if push:
+            tdbPushTables()
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
+
+def tdbSetAssignmentIntendedResourceByName(assignmentName,intendedResource,push=True):
+    aid=tdbGetAssignmentIDByName(assignmentName)
+    tdbSetAssignmentIntendedResourceByID(aid,intendedResource,push)
+
+def tdbSetTeamResourceByID(tid,resource,push=True):
+    if host:
+        tdbAddHistoryEntry(tdbGetTeamNameByID(tid)+' -> '+resource,tid=tid,recordedBy='SYSTEM')
+    q("UPDATE 'Teams' SET Resource = '"+str(resource)+"' WHERE tid = '"+str(tid)+"';")
+    r=q("SELECT * FROM 'Teams' WHERE tid = "+str(tid)+";")
+    if r:
+        tdbUpdateLastEditEpoch(tid=tid)
+        validate=r[0]
+        if push:
+            tdbPushTables()
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
+
+def tdbSetTeamResourceByName(teamName,resource,push=True):
+    tid=tdbGetTeamIDByName(teamName)
+    tdbSetTeamResourceByID(tid,resource,push)
+
+def tdbDeleteAssignment(aid,push=True):
+    if host:
+        tdbAddHistoryEntry(tdbGetAssignmentNameByID(aid)+' DELETED',aid=aid,recordedBy='SYSTEM')
+    q("DELETE FROM 'Assignments' WHERE aid = '"+str(aid)+"';")
+    r=q("SELECT * FROM 'Assignments' WHERE aid = "+str(aid)+";") # should be empty
+    if r:
+        validate=r[0]
+        return {'validate':validate}
+    else:
+        if push:
+            tdbPushTables()
+        return {'validate':'assignment deleted'}    
+
+def tdbDeleteTeam(tid,push=True):
+    if host:
+        tdbAddHistoryEntry(tdbGetTeamNameByID(tid)+' DELETED',tid=tid,recordedBy='SYSTEM')
+    q("DELETE FROM 'Teams' WHERE tid = '"+str(tid)+"';")
+    r=q("SELECT * FROM 'Teams' WHERE tid = "+str(tid)+";") # should be empty
+    if r:
+        validate=r[0]
+        return {'validate':validate}
+    else:
+        if push:
+            tdbPushTables()
+        return {'validate':'assignment deleted'}   
 
 def tdbUpdateLastEditEpoch(tid=None,aid=None,pid=None):
     if not tid and not aid and not pid:

@@ -427,6 +427,25 @@
                     text: 'Assignment'
                     font_size: 20
                     size_hint_y: 0.3
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint: 0.7,0.2
+                    pos_hint: {'center_x':0.5}
+                    id: assignmentButtonBox
+                    Button:
+                        id: assignmentEditButton
+                        text: 'Edit'
+                        on_press: app.assignmentEdit()
+                        visible: True
+                        disabled: not self.visible
+                        opacity: 1 if self.visible else 0
+                    Button:
+                        id: assignmentDeleteButton
+                        text: 'Delete'
+                        on_press: app.assignmentDelete()
+                        visible: True
+                        disabled: not self.visible
+                        opacity: 1 if self.visible else 0
             BoxLayout:
                 orientation: 'vertical'
                 BackgroundLabel:
@@ -443,6 +462,25 @@
                     text: 'Team'
                     font_size: 20
                     size_hint_y: 0.3
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint: 0.7,0.2
+                    pos_hint: {'center_x':0.5}
+                    id: teamButtonBox
+                    Button:
+                        id: teamEditButton
+                        text: 'Edit'
+                        on_press: app.teamEdit()
+                        visible: True
+                        disabled: not self.visible
+                        opacity: 1 if self.visible else 0
+                    Button:
+                        id: teamDeleteButton
+                        text: 'Delete'
+                        on_press: app.teamDelete()
+                        visible: True
+                        disabled: not self.visible
+                        opacity: 1 if self.visible else 0
         Label:
             id: statusLabel
             text: 'STATUS'
@@ -528,8 +566,8 @@
                 text: 'Team Resource Type:'
             Spinner:
                 id: resourceSpinner
-                text: 'Ground Type 2'
-                values: ['Ground Type 2','Ground Type 1','OHV','K9']
+                text: app.resourceTypes[0]
+                values: app.resourceTypes
                 # on_text: print("The spinner {} has text {}".format(self, self.text))
         Button:
             size_hint_y: 0.2
@@ -560,8 +598,8 @@
                 text: 'Intended Resource:'
             Spinner:
                 id: resourceSpinner
-                text: 'Ground Type 2'
-                values: ['Ground Type 2','Ground Type 1','OHV','K9']
+                text: app.resourceTypes[0]
+                values: app.resourceTypes
                 # on_text: print("The spinner {} has text {}".format(self, self.text))
         Button:
             size_hint_y: 0.2
