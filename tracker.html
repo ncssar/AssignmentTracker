@@ -70,6 +70,10 @@
       background-color: #888;
       color:white;
     }
+    td img {
+      height:12px;
+      position:absolute;
+    }
     #buttonsDiv {
       height:50px;
       margin:0px;
@@ -254,9 +258,9 @@
       var d=JSON.parse(event.data);
       var msg=JSON.parse(d.msg);
       // alert("incoming message:"+JSON.stringify(msg))
-      createTable([['Team',52.4],['Asgmt.',62.8],['Status',129.2],['Resource',118],['Prev.',60]],msg.teamsViewAssigned,teamsAssignedDiv);
-      createTable([['Team',52.4],['Asgmt.',62.8],['Status',129.2],['Resource',118],['Prev.',60]],msg.teamsViewUnassigned,teamsUnassignedDiv);
-      createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewAssigned,assignmentsAssignedDiv);
+      createTable([['Team',52.4],['Asgmt.',62.8],['Status',129.2],['Resource',118],['Prev.',60]],msg.teamsViewAssigned,teamsAssignedDiv,msg.medicalTeams);
+      createTable([['Team',52.4],['Asgmt.',62.8],['Status',129.2],['Resource',118],['Prev.',60]],msg.teamsViewUnassigned,teamsUnassignedDiv,msg.medicalTeams);
+      createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewAssigned,assignmentsAssignedDiv,msg.medicalTeams);
       createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewUnassigned,assignmentsUnassignedDiv);
       createTable([['Asgmt.',62.8],['Team',52.4],['Status',129.2],['Resource',118]],msg.assignmentsViewCompleted,assignmentsCompletedDiv);         
       var ta="A:"+msg.assignedTeamsCount;
@@ -414,7 +418,7 @@
     var assignmentsCompletedSortDir='asc';
 
     // from https://stackoverflow.com/a/15164958
-    function createTable(columnData,tableData,container) {
+    function createTable(columnData,tableData,container,medicalTeams=[]) {
       if(tableData.length > 0) {
         var table = document.createElement('table');
         var id=container.id+'Table';
@@ -484,6 +488,11 @@
           rowData.forEach(function(cellData) {
             var cell = document.createElement('td');
             cell.appendChild(document.createTextNode(cellData));
+            if(medicalTeams.includes(cellData)) {
+              img=document.createElement('img');
+              img.src='./img/medical-icon-31.png';
+              cell.appendChild(img)
+            }
             row.appendChild(cell);
           });
           tableBody.appendChild(row);

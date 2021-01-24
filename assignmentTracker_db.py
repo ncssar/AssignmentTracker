@@ -43,6 +43,7 @@ TEAM_COLS=[
     ["TeamName","TEXT"],
     ["TeamStatus","TEXT DEFAULT 'UNASSIGNED'"],
     ["Resource","TEXT DEFAULT 'Ground Type 2'"],
+    ["Medical","TEXT DEFAULT 'NO'"],
     ["LastEditEpoch","REAL"]]
 
 ASSIGNMENT_COLS=[
@@ -59,9 +60,9 @@ PAIRING_COLS=[
     ["aid","INTEGER"],
     ["tid","INTEGER"],
     ["PairingStatus","TEXT DEFAULT 'CURRENT'"],  # CURRENT or PREVIOUS
-    ["LastEditEpoch","REAL"],
     ["NameSave","TEXT"],
-    ["ResourceSave","TEXT"]]
+    ["ResourceSave","TEXT"],
+    ["LastEditEpoch","REAL"]]
 
 # History table: all activities are recorded in one table; each entry
 #   has columns for aid, tid, Entry, RecordedBy, Epoch;
@@ -173,7 +174,6 @@ def wsSend(msg,wsUrl=None):
     else: # use pusher.com
         try:
             pusher_client.trigger('my-channel', 'my-event', {'msg': msg})
-            print("pusher send successful")
         except Exception as e:
             print("pusher send failed: "+str(e))
 
@@ -403,6 +403,15 @@ def tdbGetTeamResourceByName(teamName):
     else:
         return None
 
+def tdbGetTeamMedicalByName(teamName):
+    query="SELECT Medical FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
+    # print("query:"+query)
+    r=q(query)
+    # print("response:"+str(r))
+    if type(r) is list and len(r)>0 and type(r[0]) is dict:
+        return r[0].get("Medical",None)
+    else:
+        return None
 
 # assignment getters
 def tdbGetAssignmentNameByID(aid):
@@ -483,6 +492,10 @@ def tdbGetTeamsView():
     # print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
     return teamsList
 
+def tdbGetMedicalTeams():
+    r=q("SELECT TeamName FROM 'Teams' WHERE Medical == 'YES'")
+    return [x['TeamName'] for x in r]
+
 # tdbUpdateTables can also be used to get the team and assignment counts
 #  but, can't use the assignments view since it's actually a list of
 #  pairings, and there may be more than one entry per assignment, so, 
@@ -497,6 +510,7 @@ def tdbPushTables(teamsViewList=None,assignmentsViewList=None):
     assignmentsViewAssignedList=[x for x in assignmentsViewList if x[2] not in ['UNASSIGNED','COMPLETED']]
     assignmentsViewUnassignedList=[x for x in assignmentsViewList if x[2]=='UNASSIGNED']
     assignmentsViewCompletedList=[x for x in assignmentsViewList if x[2]=='COMPLETED']
+    medicalTeamsList=tdbGetMedicalTeams()
     d={
         "teamsViewAssigned":teamsViewAssignedList,
         "teamsViewUnassigned":teamsViewUnassignedList,
@@ -507,7 +521,8 @@ def tdbPushTables(teamsViewList=None,assignmentsViewList=None):
         "unassignedTeamsCount":len(teamsViewUnassignedList),
         "assignedAssignmentsCount":len(assignmentsViewAssignedList),
         "unassignedAssignmentsCount":len(assignmentsViewUnassignedList),
-        "completedAssignmentsCount":len(assignmentsViewCompletedList)}
+        "completedAssignmentsCount":len(assignmentsViewCompletedList),
+        "medicalTeams":medicalTeamsList}
     if wsOk: # wsSend will send over URL or over pusher.com as appropriate
         wsSend(json.dumps(d))
     return(d)
@@ -681,6 +696,24 @@ def tdbSetTeamResourceByID(tid,resource,push=True):
 def tdbSetTeamResourceByName(teamName,resource,push=True):
     tid=tdbGetTeamIDByName(teamName)
     tdbSetTeamResourceByID(tid,resource,push)
+
+def tdbSetTeamMedicalByID(tid,medical,push=True):
+    if host:
+        tdbAddHistoryEntry(tdbGetTeamNameByID(tid)+' Medical -> '+medical,tid=tid,recordedBy='SYSTEM')
+    q("UPDATE 'Teams' SET Medical = '"+str(medical)+"' WHERE tid = '"+str(tid)+"';")
+    r=q("SELECT * FROM 'Teams' WHERE tid = "+str(tid)+";")
+    if r:
+        tdbUpdateLastEditEpoch(tid=tid)
+        validate=r[0]
+        if push:
+            tdbPushTables()
+        return {'validate':validate}
+    else:
+        return {'error':'Query did not return a value'}
+
+def tdbSetTeamMedicalByName(teamName,medical,push=True):
+    tid=tdbGetTeamIDByName(teamName)
+    tdbSetTeamMedicalByID(tid,medical,push)
 
 def tdbDeleteAssignment(aid,push=True):
     if host:

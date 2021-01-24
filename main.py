@@ -1077,7 +1077,7 @@ class assignmentTrackerApp(App):
         teamName=self.pairingDetailScreen.ids.teamNameLabel.text
         tid=tdbGetTeamIDByName(teamName)
         resource=tdbGetTeamResourceByName(teamName)
-        medical='NO' # hardcode for now, until medical is enabled throughout the workflow
+        medical=tdbGetTeamMedicalByName(teamName)
         teamNameLabel=Label(text=teamName)
         box.add_widget(teamNameLabel)
         resourceBox=BoxLayout(orientation='horizontal')
@@ -1089,15 +1089,18 @@ class assignmentTrackerApp(App):
         medicalBox=BoxLayout(orientation='horizontal')
         medicalLabel=Label(text='Medical:',size_hint_x=0.4)
         medicalBox.add_widget(medicalLabel)
-        medicalSpinner=Spinner(text=medical,values=['YES','NO'])
+        medicalSpinner=Spinner(text=medical,values=['NO','YES'])
         medicalBox.add_widget(medicalSpinner)
         box.add_widget(medicalBox)
         okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
         okButton=Button(text='OK')
         def teamEditAccept(*args):
             newR=resourceSpinner.text
+            newM=medicalSpinner.text
             tdbSetTeamResourceByID(tid,newR)
             self.sendRequest("api/v1/teams/"+str(tid)+"/resource","PUT",{"Resource":str(newR)})
+            tdbSetTeamMedicalByID(tid,newM)
+            self.sendRequest("api/v1/teams/"+str(tid)+"/medical","PUT",{"Medical":str(newM)})
             self.pairingDetailScreen.ids.teamResourceLabel.text=str(newR)
             self.pairingDetailHistoryUpdate()
         okButton.bind(on_release=teamEditAccept)
