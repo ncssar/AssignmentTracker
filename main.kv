@@ -213,12 +213,18 @@
 
 <SelectableLabel>:
     bg: 0,0,0,0
+    src: ''
     canvas.before:
         Color:
             rgba: (0,0.9,0.1,0.3) if self.selected else self.bg
         Rectangle:
             pos: self.pos
             size: self.size
+    canvas:
+        Rectangle:
+            source: root.src
+            pos:(self.right-30,self.top-self.height+10)
+            size:(0,0) if root.src=='' else (14,14)
             
 <ClockText>:
 
@@ -335,7 +341,7 @@
             RecycleView:
                 viewclass: 'SelectableLabel'
                 id: teamsRV
-                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.teamsRVList]
+                data: root.teamsRVData
                 SelectableRecycleGridLayout:
                     id: teamsLayout
                     cols: 5
@@ -375,7 +381,7 @@
             RecycleView:
                 viewclass: 'SelectableLabel'
                 id: assignmentsRV
-                data: [{'text':str(x),'bg':(0,0,0,0)} for x in root.assignmentsRVList]
+                data: root.assignmentsRVData
                 SelectableRecycleGridLayout:
                     id: assignmentsLayout
                     cols: 4
@@ -429,23 +435,17 @@
                     size_hint_y: 0.3
                 BoxLayout:
                     orientation: 'horizontal'
-                    size_hint: 0.7,0.2
+                    size_hint: 0.7,0.3
                     pos_hint: {'center_x':0.5}
                     id: assignmentButtonBox
                     Button:
                         id: assignmentEditButton
                         text: 'Edit'
                         on_press: app.assignmentEdit()
-                        visible: True
-                        disabled: not self.visible
-                        opacity: 1 if self.visible else 0
                     Button:
                         id: assignmentDeleteButton
                         text: 'Delete'
                         on_press: app.assignmentDelete()
-                        visible: True
-                        disabled: not self.visible
-                        opacity: 1 if self.visible else 0
             BoxLayout:
                 orientation: 'vertical'
                 BackgroundLabel:
@@ -464,23 +464,17 @@
                     size_hint_y: 0.3
                 BoxLayout:
                     orientation: 'horizontal'
-                    size_hint: 0.7,0.2
+                    size_hint: 0.7,0.3
                     pos_hint: {'center_x':0.5}
                     id: teamButtonBox
                     Button:
                         id: teamEditButton
                         text: 'Edit'
                         on_press: app.teamEdit()
-                        visible: True
-                        disabled: not self.visible
-                        opacity: 1 if self.visible else 0
                     Button:
                         id: teamDeleteButton
                         text: 'Delete'
                         on_press: app.teamDelete()
-                        visible: True
-                        disabled: not self.visible
-                        opacity: 1 if self.visible else 0
         Label:
             id: statusLabel
             text: 'STATUS'

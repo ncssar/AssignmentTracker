@@ -184,6 +184,7 @@ class assignmentTrackerApp(App):
         self.nodeName='OBSERVER'
         self.teamNamePool=list(map(str,range(101,200)))
         self.assignmentNamePool=[chr(a)+chr(b) for a in range(65,91) for b in range(65,91)] # AA..AZ,BA..BZ,..
+        self.medicalIconSrc='./img/medical-icon-31.png'
 
         # for each screen, example myScreen1 as instance of class myScreen:
         # 1. define myScreen in .kv
@@ -553,6 +554,7 @@ class assignmentTrackerApp(App):
             #  (TeamName can never be changed)
             setString="TeamStatus='"+str(e['TeamStatus'])+"'"
             setString+=", Resource='"+str(e['Resource'])+"'"
+            setString+=", Medical='"+str(e['Medical'])+"'"
             setString+=', LastEditEpoch='+str(e['LastEditEpoch'])
             query='UPDATE Teams SET '+setString+' WHERE tid='+str(e['tid'])+';'
             Logger.info('Teams sync query:'+query)
@@ -563,6 +565,7 @@ class assignmentTrackerApp(App):
                         e['TeamName'],
                         e['Resource'],
                         status=e['TeamStatus'],
+                        medical=e['Medical'],
                         tid=e['tid'],
                         lastEditEpoch=e['LastEditEpoch'])
                 Logger.info('   creating a new team.  response:'+str(r))
@@ -754,28 +757,41 @@ class assignmentTrackerApp(App):
         self.teamsList=tdbGetTeamsView()
         self.assignmentsList=tdbGetAssignmentsView()
         self.updateCounts()
+        self.medicalTeams=tdbGetMedicalTeams()
 
     def showTeams(self,*args):
         Logger.info('showTeams called')
-        self.buildLists()                
-        # recycleview needs a single list of strings; it divides into rows every nth element
-        self.teamsScreen.teamsRVList=[]
+        self.buildLists()
+        # recycleview needs a list of dictionaries; the view divides into rows every nth element
+        self.teamsScreen.teamsRVData=[]
         for entry in self.teamsList:
             row=copy.deepcopy(entry)
-            # Logger.info('adding row to teamsRVList:'+str(row))
-            self.teamsScreen.teamsRVList=self.teamsScreen.teamsRVList+row
-        # Logger.info('built teamsRVList:'+str(self.teamsScreen.teamsRVList))
+            for cell in row:
+                d={}
+                d['text']=str(cell)
+                d['bg']=(0,0,0,0)
+                d['src']=''
+                if cell in self.medicalTeams:
+                    d['src']=self.medicalIconSrc
+                self.teamsScreen.teamsRVData.append(d)
         self.sm.transition=NoTransition()
         self.sm.current='teamsScreen'
 
     def showAssignments(self,*args):
         Logger.info("showAssignments called")
-        self.buildLists()             
-        # recycleview needs a single list of strings; it divides into rows every nth element
-        self.assignmentsScreen.assignmentsRVList=[]
+        self.buildLists()
+        # recycleview needs a list of dictionaries; the view divides into rows every nth element
+        self.assignmentsScreen.assignmentsRVData=[]
         for entry in self.assignmentsList:
             row=copy.deepcopy(entry)
-            self.assignmentsScreen.assignmentsRVList=self.assignmentsScreen.assignmentsRVList+row
+            for cell in row:
+                d={}
+                d['text']=str(cell)
+                d['bg']=(0,0,0,0)
+                d['src']=''
+                if cell in self.medicalTeams:
+                    d['src']=self.medicalIconSrc
+                self.assignmentsScreen.assignmentsRVData.append(d)
         self.sm.transition=NoTransition()
         self.sm.current='assignmentsScreen'
 
@@ -817,10 +833,10 @@ class assignmentTrackerApp(App):
                     self.pairingDetailScreen.ids.pairButton.text='Assign another team to this assignment'
                 else:
                     self.pairingDetailScreen.ids.pairButton.text='Assign this team to another assignment'
-                self.pairingDetailScreen.ids.assignmentEditButton.visible=False
-                self.pairingDetailScreen.ids.assignmentDeleteButton.visible=False
-                self.pairingDetailScreen.ids.teamEditButton.visible=False
-                self.pairingDetailScreen.ids.teamDeleteButton.visible=False
+                self.pairingDetailScreen.ids.assignmentEditButton.disabled=True
+                self.pairingDetailScreen.ids.assignmentDeleteButton.disabled=True
+                self.pairingDetailScreen.ids.teamEditButton.disabled=False
+                self.pairingDetailScreen.ids.teamDeleteButton.disabled=True
             else: # assignment specified, but not team
                 teamName='--'
                 teamResource=''
@@ -829,10 +845,10 @@ class assignmentTrackerApp(App):
                 self.pairingDetailScreen.ids.intendedResourceLabel.text='Intended for: '+intendedResource
                 self.pairingDetailScreen.ids.statusBox.visible=False
                 self.pairingDetailScreen.ids.pairButton.text='Assign a team to this assignment'
-                self.pairingDetailScreen.ids.assignmentEditButton.visible=True
-                self.pairingDetailScreen.ids.assignmentDeleteButton.visible=True
-                self.pairingDetailScreen.ids.teamEditButton.visible=False
-                self.pairingDetailScreen.ids.teamDeleteButton.visible=False
+                self.pairingDetailScreen.ids.assignmentEditButton.disabled=False
+                self.pairingDetailScreen.ids.assignmentDeleteButton.disabled=False
+                self.pairingDetailScreen.ids.teamEditButton.disabled=True
+                self.pairingDetailScreen.ids.teamDeleteButton.disabled=True
         elif teamName: # team specified, but not assignment
             assignmentName='--'
             intendedResource=''
@@ -841,10 +857,10 @@ class assignmentTrackerApp(App):
             self.pairingDetailScreen.ids.statusBox.visible=False
             self.pairingDetailScreen.ids.pairButton.text='Assign this team to an assignment'
             self.pairingDetailScreen.ids.intendedResourceLabel.text=''
-            self.pairingDetailScreen.ids.assignmentEditButton.visible=False
-            self.pairingDetailScreen.ids.assignmentDeleteButton.visible=False
-            self.pairingDetailScreen.ids.teamEditButton.visible=True
-            self.pairingDetailScreen.ids.teamDeleteButton.visible=True
+            self.pairingDetailScreen.ids.assignmentEditButton.disabled=True
+            self.pairingDetailScreen.ids.assignmentDeleteButton.disabled=True
+            self.pairingDetailScreen.ids.teamEditButton.disabled=False
+            self.pairingDetailScreen.ids.teamDeleteButton.disabled=False
         self.pairingDetailScreen.ids.assignmentNameLabel.text=assignmentName
         self.pairingDetailScreen.ids.teamNameLabel.text=teamName
         self.pairingDetailScreen.ids.teamResourceLabel.text=teamResource
@@ -1206,6 +1222,7 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
     selected = BooleanProperty(False)
     selectable = BooleanProperty(True)
     bg=ListProperty([0,0,0,0])
+    # src=StringProperty('')
 
     def refresh_view_attrs(self, rv, index, data):
         ''' Catch and handle the view changes '''
@@ -1261,11 +1278,11 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
 
 
 class TeamsScreen(Screen):
-    teamsRVList=ListProperty([])
+    teamsRVData=ListProperty([])
 
 
 class AssignmentsScreen(Screen):
-    assignmentsRVList=ListProperty([])
+    assignmentsRVData=ListProperty([])
 
 
 class PairingDetailScreen(Screen):

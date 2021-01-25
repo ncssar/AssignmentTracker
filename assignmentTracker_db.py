@@ -251,7 +251,7 @@ def qInsert(tableName,d):
 ##   handlers that call this code should perform jsonification, while client
 ##   nodes do not need to do any jsonification
 
-def tdbNewTeam(name,resource,status=None,tid=None,lastEditEpoch=None):
+def tdbNewTeam(name,resource,status=None,medical='NO',tid=None,lastEditEpoch=None):
     # status, tid, and lastEditEpoch arguments will only exist if this is being called from sync handler
     if host: # this clause will only run on the host
         global nextTid
@@ -264,6 +264,7 @@ def tdbNewTeam(name,resource,status=None,tid=None,lastEditEpoch=None):
     d['tid']=tid
     d['TeamName']=name
     d['Resource']=resource
+    d['Medical']=medical
     d['LastEditEpoch']=lee
     if status: # use the default status unless specified
         d['TeamStatus']=status
