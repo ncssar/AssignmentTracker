@@ -45,6 +45,9 @@
         size_hint: None, None
         pos: root.pos
         size: root.size
+        # size: (root.width, self.minimum_height+25)
+        # # size_hint: (1, None)
+        # # height: self.minimum_height + 25
         BoxLayout:
             orientation: 'horizontal'
             id: topBar
@@ -87,6 +90,8 @@
                     size: self.width, root.separator_height
 
         BoxLayout:
+            # size_hint: (1, None)
+            # height: self.minimum_height + 25
             id: container
 
 <ExpandingPopup@Popup>:
@@ -299,15 +304,30 @@
 
 <DeviceHeader@BoxLayout>:
     BoxLayout:
-        size_hint_y: None
-        orientation: 'vertical'
-        Label:
-            text: 'This device is assigned to'
-            font_size: '10sp'
-        Label:
-            id: deviceLabel
-            text: 'N/A'
-            font_size: '50sp'
+        orientation: 'horizontal'
+        BoxLayout:
+            orientation: 'vertical'
+            Label:
+                text: 'This device is assigned to'
+                font_size: '10sp'
+            Label:
+                id: deviceLabel
+                text: 'N/A'
+                font_size: '50sp'
+        Button:
+            size_hint_x:None
+            size_hint_y:None
+            height:48
+            width:48
+            background_normal: './img/sartopo_refresh-48.png'
+            on_press: app.stsSync()
+        Button:
+            size_hint_x:None
+            size_hint_y:None
+            height:48
+            width:48
+            background_normal: './img/options-icon-white-48.png'
+            on_press: app.optionsPopup()
 
 <TeamsScreen>:
     BoxLayout:

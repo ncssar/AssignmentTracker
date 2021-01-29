@@ -43,10 +43,12 @@ from datetime import datetime,timezone
 # from requests.exceptions import Timeout
 import json
 from functools import partial
+import configparser
 import urllib.parse
 import certifi # attempt to fix SSL shared-token problem on Android
 # from plyer import wifi
 # import pusher
+from sartopo_python import SartopoSession
 
 # # database interface module shared by this app and the assignmentTracker_api
 from assignmentTracker_db import *
@@ -176,10 +178,25 @@ class assignmentTrackerApp(App):
         self.pairingHistoryRVList=[1,2,3,4,5]
         self.apiOKText="<h1>AssignmentTracker Database API</h1>"
         self.lastSyncTimeStamp=0
-        self.resourceTypes=['Ground Type 2','Ground Type 1','OHV','K9 (Area)','K9 (Trailing)']
+        self.resourceTypes=[ # matches sartopo assignment resource choices
+            'GROUND',
+            'GROUND-1',
+            'GROUND-2',
+            'GROUND-3',
+            'DOG',
+            'DOG-TRAIL',
+            'DOG-AREA',
+            'DOG-HRD',
+            'OHV',
+            'WATER',
+            'MOUNTED',
+            'AIR']
         self.lan=False
         self.cloud=False
         self.localhost=False
+        self.stsConfigpath=('C:\\Users\\caver\\Documents\\GitHub\\sts_caver456.ini')
+        self.stsUrl=None
+        self.sts=None
 
         self.nodeName='OBSERVER'
         self.teamNamePool=list(map(str,range(101,200)))
@@ -306,7 +323,7 @@ class assignmentTrackerApp(App):
                 title='Join or Initialize',
                 content=box,
                 size_hint=(0.8,0.2),
-                background_color=(0,0,0,1))
+                background_color=(0,0,0,0.5))
         button=Button(text='Join existing incident')
         box.add_widget(button)
         button.bind(on_release=partial(self.cloudJoin,False))
@@ -329,11 +346,21 @@ class assignmentTrackerApp(App):
                 background_color=(0,0,0,0.5))
         label=WrappedLabel(text='Starting a new incident will reset the database for all connected users.\n\nIf you really want to start a new incident, enter the new incident name below:')
         box.add_widget(label)
+        # popup.ids.theLabel.text='Starting a new incident will reset the database for all connected users.\n\nIf you really want to start a new incident, enter the new incident name below:'
         incidentName=TextInput(multiline=False,size_hint_y=None,height=30)
         incidentName.bind(text=okButtonDisabledUpdate)
         box.add_widget(incidentName)
+        stsUrlBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=35)
+        stsUrlLabel=Label(text='SARTopo URL:',size_hint_x=0.4)
+        stsUrlBox.add_widget(stsUrlLabel)
+        stsUrlField=TextInput(multiline=False,size_hint_y=None,height=30)
+        stsUrlBox.add_widget(stsUrlField)
+        box.add_widget(stsUrlBox)
         okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
-        okButton.bind(on_release=partial(self.cloudJoin,True))
+        def newIncidentAccept(*args):
+            self.stsUrl=stsUrlField.text
+            self.cloudJoin(True)
+        okButton.bind(on_release=newIncidentAccept)
         okButton.bind(on_release=popup.dismiss)
         okButton.bind(on_release=self.joinPopup_.dismiss)
         cancelButton=Button(text='Cancel')
@@ -341,7 +368,7 @@ class assignmentTrackerApp(App):
         okCancelBox.add_widget(okButton)
         okCancelBox.add_widget(cancelButton)
         box.add_widget(okCancelBox)
-        popup.height=popup.content.height+130
+        popup.height=box.height+160
         popup.open()
 
     def joinAsPopup(self,*args):
@@ -368,6 +395,35 @@ class assignmentTrackerApp(App):
         self.teamsScreen.ids.deviceHeader.ids.deviceLabel.text=self.nodeName
         self.assignmentsScreen.ids.deviceHeader.ids.deviceLabel.text=self.nodeName
 
+    def optionsPopup(self):
+        box=BoxLayout(orientation='vertical')
+        popup=PopupWithIcons(
+                title='Options',
+                content=box,
+                size_hint=(0.8,None),
+                background_color=(0,0,0,0.5))
+        stsUrlBox=BoxLayout(orientation='horizontal')
+        stsUrlLabel=Label(text='SARTopo URL:',size_hint_x=0.4,size_hint_y=None,height=30)
+        stsUrlBox.add_widget(stsUrlLabel)
+        stsUrlField=TextInput(multiline=False,size_hint_y=None,height=30)
+        stsUrlBox.add_widget(stsUrlField)
+        box.add_widget(stsUrlBox)
+        okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
+        okButton=Button(text='OK')
+        def optionsAccept(*args):
+            self.stsUrl=stsUrlField.text
+            self.setSts()
+            self.stsSync()
+        okButton.bind(on_release=optionsAccept)
+        okButton.bind(on_release=popup.dismiss)
+        cancelButton=Button(text='Cancel')
+        cancelButton.bind(on_release=popup.dismiss)
+        okCancelBox.add_widget(okButton)
+        okCancelBox.add_widget(cancelButton)
+        box.add_widget(okCancelBox)
+        popup.height=popup.content.height+35
+        popup.open()
+
     def newPairingPopup(self,assignmentName,teamName):
         self.textpopup(text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\n'+NEW_PAIRING_POPUP_TEXT)
 
@@ -380,9 +436,86 @@ class assignmentTrackerApp(App):
                 d['Init']=True
             self.cloudRequest('api/v1/join','POST',d,timeout=5) # make this a blocking call
             # if not init: # do an initial sync if we are not initializing
+            # self.updateCounts()
+            self.buildLists()
+            if self.stsUrl:
+                self.setSts()
+                self.stsSync()
             self.sync(since=0)
             Clock.schedule_interval(self.sync,5) # start syncing every 5 seconds
-            self.updateCounts()
+
+    def setSts(self):
+        url=self.stsUrl
+        id=None
+        key=None
+        if 'sartopo.com' in url:
+            if self.stsConfigpath is not None:
+                if os.path.isfile(self.stsConfigpath):
+                    # if self.stsAccount is None:
+                    #     print("config file '"+self.stsConfigpath+"' is specified, but no account name is specified.")
+                    #     return -1
+                    config=configparser.ConfigParser()
+                    config.read(self.stsConfigpath)
+                    account=config.sections()[0]  # just use the first section for now
+                    section=config[account]
+                    id=section.get("id",None)
+                    key=section.get("key",None)
+                    if id is None or key is None:
+                        print("account entry '"+account+"' in config file '"+self.stsConfigpath+"' is not complete:\n  it must specify id and key.")
+                        return -1
+                else:
+                    print("specified config file '"+self.stsConfigpath+"' does not exist.")
+                    return -1
+            else:
+                print("Sartopo session config file name was not specified.")
+                return -1
+        if url.endswith("#"): # pound sign at end of URL causes crash; brute force fix it here
+            url=url[:-1]
+        parse=url.replace("http://","").replace("https://","").split("/")
+        domainAndPort=parse[0]
+        mapID=parse[-1]
+        print("tdbCreateSts: creating instance of SartopoSession: domainAndPort="+domainAndPort+" mapID="+mapID)
+        self.sts=SartopoSession(domainAndPort=domainAndPort,mapID=mapID,id=id,key=key)
+        print("sts return value:"+str(self.sts))
+
+    # SARTopo sync rules:
+    # - unnamed assignments in sartopo: show a warning dialog and do not import the assignment
+    # - named sartopo assignment that doesn't yet exist in tracker: add the assignment to tracker
+    # - named sartopo assignment that exists (by the same name) in tracker:
+    #    - if intended resource and status are the same as tracker, take no action
+    #    - if intended resource is different than tracker: update tracker to match sartopo
+    #    - if status is different than tracker: show a warning dialog
+    def stsSync(self):
+        j=self.sts.getFeatures('Assignment')
+        print("sartopo assignments json:"+json.dumps(j,indent=2))
+        self.sartopoAssignments=[]
+        for a in j:
+            d={}
+            ap=a['properties']
+            ag=a['geometry']
+            d['letter']=ap['letter']
+            d['id']=a['id']
+            d['type']=ag['type'] # LineString or Polygon
+            d['resource']=ap.get('resourceType','GROUND')
+            d['status']=ap['status']
+            self.sartopoAssignments.append(d)
+        print("assignments from sartopo: "+str(self.sartopoAssignments))
+        print("assignmentsList: "+str(self.assignmentsList))
+        if '' in [x['letter'] for x in self.sartopoAssignments]:
+            self.textpopup('WARNING: Unnamed (unlettered) SARTopo Assignments exist on the map.  Only named assignments will be imported to AssignmentTracker.')
+        for a in self.sartopoAssignments:
+            if a['letter']!='':
+                if a['letter'] not in [x[0] for x in self.assignmentsList]:
+                    self.newAssignment(name=a['letter'],intendedResource=a['resource'],sid=a['id'])
+                else:
+                    if a['resource']!=tdbGetAssignmentIntendedResourceByName(a['letter']):
+                        tdbSetAssignmentIntendedResourceByName(a['letter'],a['resource'])
+                    status=tdbGetAssignmentStatusByName(a['letter'])
+                    if ((a['status']=='INPROGRESS' and status in ['UNASSIGNED','ASSIGNED','COMPLETED']) or
+                            (a['status'] in ['DRAFT','PREPARED'] and status in ['WORKING','ENROUTE TO IC','DEBRIEFING','COMPLETED']) or
+                            (a['status'] in ['COMPLETED'] and status not in ['COMPLETED'])):
+                        self.textpopup('WARNING: SARTopo assignment '+a['letter']+' status mismatch:\nSARTopo status = '+a['status']+'\nAssignmentTracker status = '+status+'\n\nPlease change status setting(s) as needed.')
+        self.redraw()
 
     def localhostJoin(self,init=False):
         if self.localhost:
@@ -576,6 +709,7 @@ class assignmentTrackerApp(App):
             #  (AssignmentName can never be changed)
             setString="AssignmentStatus='"+str(e['AssignmentStatus'])+"'"
             setString+=", IntendedResource='"+str(e['IntendedResource'])+"'"
+            setString+=", sid='"+str(e['sid'])+"'"
             setString+=', LastEditEpoch='+str(e['LastEditEpoch'])
             query='UPDATE Assignments SET '+setString+' WHERE aid='+str(e['aid'])+';'
             Logger.info('Assignment sync query:'+query)
@@ -587,6 +721,7 @@ class assignmentTrackerApp(App):
                         e['IntendedResource'],
                         status=e['AssignmentStatus'],
                         aid=e['aid'],
+                        sid=e['sid'],
                         lastEditEpoch=e['LastEditEpoch'])
                 Logger.info('   creating a new assignment.  response:'+str(r))
             if e['AssignmentName'] in self.assignmentNamePool:
@@ -661,18 +796,18 @@ class assignmentTrackerApp(App):
         v=response['validate']
         tdbNewTeamFinalize(n,v['tid'],v['LastEditEpoch'])
 
-    def newAssignment(self,name=None,intendedResource=None,doToast=True):
+    def newAssignment(self,name=None,intendedResource=None,sid=None,doToast=True):
         name=name or self.newAssignmentScreen.ids.nameSpinner.text
         if name in self.assignmentNamePool:
             self.assignmentNamePool.remove(name)
         intendedResource=intendedResource or self.newAssignmentScreen.ids.resourceSpinner.text
-        r=tdbNewAssignment(name,intendedResource)
+        r=tdbNewAssignment(name,intendedResource,sid)
         n=r['validate']['n']
         # send n (local db index) with the request payload, so that the response handler will have access to it;
         #   that way this specific n will be kept with this specific request, which prevents
         #   race conditions that would result from setting a class variable to keep track of n then unsetting it
         #   in the response handler (i.e. when multiple local objects are created before the first response)
-        self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource,'n':n},on_success=self.on_newAssignment_success)
+        self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource,'n':n,'sid':sid},on_success=self.on_newAssignment_success)
         self.updateNewAssignmentNameSpinner()
         self.buildLists()
         if doToast:
@@ -716,7 +851,7 @@ class assignmentTrackerApp(App):
             tdbSetPairingStatusByID(prevID,'CURRENT')
             self.sendRequest('api/v1/pairings/'+str(prevID)+'/status','PUT',{'NewStatus':'CURRENT'})
             tdbSetTeamStatusByName(teamName,'ASSIGNED')
-            tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')
+            tdbSetAssignmentStatusByName(assignmentName,'ASSIGNED')                
             # api call for a new pairing takes care of setting the team and assignment status
             #  on the host, but we purposely are not making that call here, so we need to do
             #  those api calls separately
@@ -758,6 +893,12 @@ class assignmentTrackerApp(App):
         self.assignmentsList=tdbGetAssignmentsView()
         self.updateCounts()
         self.medicalTeams=tdbGetMedicalTeams()
+
+    def redraw(self):
+        if self.sm.current=='teamsScreen':
+            self.showTeams()
+        elif self.sm.current=='assignmentsScreen':
+            self.showAssignments()
 
     def showTeams(self,*args):
         Logger.info('showTeams called')

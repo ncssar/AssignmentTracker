@@ -42,7 +42,7 @@ TEAM_COLS=[
     ["tid","INTEGER"],
     ["TeamName","TEXT"],
     ["TeamStatus","TEXT DEFAULT 'UNASSIGNED'"],
-    ["Resource","TEXT DEFAULT 'Ground Type 2'"],
+    ["Resource","TEXT DEFAULT 'GROUND'"],
     ["Medical","TEXT DEFAULT 'NO'"],
     ["LastEditEpoch","REAL"]]
 
@@ -51,7 +51,8 @@ ASSIGNMENT_COLS=[
     ["aid","INTEGER"],
     ["AssignmentName","TEXT"],
     ["AssignmentStatus","TEXT DEFAULT 'UNASSIGNED'"], # either UNASSIGNED or ASSIGNED
-    ["IntendedResource","TEXT DEFAULT 'Ground Type 2'"],
+    ["IntendedResource","TEXT DEFAULT 'GROUND'"],
+    ["sid","TEXT DEFAULT ''"], # sartopo assignment id
     ["LastEditEpoch","REAL"]]
 
 PAIRING_COLS=[
@@ -279,7 +280,7 @@ def tdbNewTeam(name,resource,status=None,medical='NO',tid=None,lastEditEpoch=Non
     tdbPushTables()
     return {'validate':validate}
 
-def tdbNewAssignment(name,intendedResource,status=None,aid=None,lastEditEpoch=None):
+def tdbNewAssignment(name,intendedResource,status=None,aid=None,sid=None,lastEditEpoch=None):
     # status, aid, and lastEditEpoch arguments will only exist if this is being called from sync handler
     if host:
         global nextAid
@@ -295,6 +296,8 @@ def tdbNewAssignment(name,intendedResource,status=None,aid=None,lastEditEpoch=No
     d['LastEditEpoch']=lee
     if status: # use the default status unless specified
         d['AssignmentStatus']=status
+    if sid:
+        d['sid']=sid
     qInsert('Assignments',d)
     r=q('SELECT * FROM Assignments ORDER BY n DESC LIMIT 1;')
     # when called from sync handler: don't write a history entry
