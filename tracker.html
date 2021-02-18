@@ -214,7 +214,7 @@
     var ws;
     // var url=wsLocalhostURL;
 
-    // alert("trying localhost websocket "+wsLocalhostURL);
+    alert("trying localhost websocket "+wsLocalhostURL);
     try {
       wsLocalhost = new WebSocket(wsLocalhostURL);
       wsLocalhost.onmessage=function(event) {
@@ -226,7 +226,7 @@
       alert('localhost websocket not available');
     }
 
-    // alert("trying LAN websocket "+wsLANURL);
+    alert("trying LAN websocket "+wsLANURL);
     try {
       wsLAN = new WebSocket(wsLANURL);
       wsLAN.onmessage=function(event) { 

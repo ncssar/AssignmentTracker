@@ -24,6 +24,7 @@ import json
 import time
 import os
 import re
+import logging
 from websocket import create_connection # not websockets; websocket (singular) allows simple synchronous send
 
 # use one table for teams, one table for assignments, and reduce duplication of data;
@@ -126,7 +127,7 @@ def dict_factory(cursor, row):
 #  they are kept separate by the fact that only one separate instance of this code
 #  is running on each machine involved (one on each server, one on each client)
 def q(query,params=None):
-    # print("q called: "+query)
+    # logging.info("q called logger: "+query)
     conn = sqlite3.connect('tracker.db')
     conn.row_factory = dict_factory # so that return value is a dict instead of tuples
     cur = conn.cursor()
@@ -139,14 +140,14 @@ def q(query,params=None):
             r=cur.execute(query).fetchall()
         conn.commit()
     except:
-        print("ERROR during SQL query:")
-        print("  query='"+str(query)+"'")
-        print("  params='"+str(params)+"'")
+        logging.warning("ERROR during SQL query:")
+        logging.warning("  query='"+str(query)+"'")
+        logging.warning("  params='"+str(params)+"'")
         return None
     # for update requests, return the number of rows affected
     if query.lower().startswith('update'):
         return cur.rowcount
-    # print("  result:" +str(r))
+    # logging.info("  result:" +str(r))
     return r
 
 def wsCheck(url):
@@ -163,20 +164,20 @@ def wsCheck(url):
 
 def wsSend(msg,wsUrl=None):
     wsUrl=wsUrl or url # use the global url normally
-    # print("sending - wsUseURL="+str(wsUseURL))
+    # logging.info("sending - wsUseURL="+str(wsUseURL))
     if wsUseURL:
         try:
             ws=create_connection(wsUrl,1) # 1 second timeout
             ws.send(json.dumps({'msg':msg}))
             ws.close()
-            print("websocket send to "+wsUrl+" successful")
+            logging.info("websocket send to "+wsUrl+" successful")
         except:
-            print("websocket send to "+wsUrl+" failed")
+            logging.info("websocket send to "+wsUrl+" failed")
     else: # use pusher.com
         try:
             pusher_client.trigger('my-channel', 'my-event', {'msg': msg})
         except Exception as e:
-            print("pusher send failed: "+str(e))
+            logging.info("pusher send failed: "+str(e))
 
 def createTeamsTableIfNeeded():
     colString="'n' INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -204,7 +205,7 @@ def createHistoryTableIfNeeded():
 
 # tdbInit will only be called once, when the first node joins
 def tdbInit(server=None):
-    print('tdbInit called: server='+str(server))
+    logging.info('tdbInit called: server='+str(server))
     if os.path.exists('tracker.db'):
         os.remove('tracker.db')
     createTeamsTableIfNeeded()
@@ -226,11 +227,11 @@ def tdbInit(server=None):
         wsOk=wsCheck(wsUrl)
         url=wsUrl
         tdbPushTables()
-        print("wsCheck "+url+" : "+str(wsOk))
+        logging.info("wsCheck "+url+" : "+str(wsOk))
 
 # insert using db parameters to avoid SQL injection attack and to correctly handle None
 def qInsert(tableName,d):
-    # print("qInsert called: tableName="+str(tableName)+"  d="+str(d))
+    # logging.info("qInsert called: tableName="+str(tableName)+"  d="+str(d))
     colList="({columns})".format(
             columns=', '.join(d.keys()))
     valList="({columns})".format(
@@ -269,7 +270,7 @@ def tdbNewTeam(name,resource,status=None,medical='NO',tid=None,lastEditEpoch=Non
     d['LastEditEpoch']=lee
     if status: # use the default status unless specified
         d['TeamStatus']=status
-        print("  inserting d:"+str(d))
+        logging.info("  inserting d:"+str(d))
     qInsert('Teams',d)
     r=q('SELECT * FROM Teams ORDER BY n DESC LIMIT 1;')
     # when called from sync handler: don't write a history entry
@@ -339,15 +340,15 @@ def tdbNewPairing(aid,tid,status=None,pid=None,lastEditEpoch=None):
     return {'validate':validate}
 
 def tdbNewTeamFinalize(n,tid,lastEditEpoch):
-    # print("New team finalize:"+str(n)+"="+str(tid))
+    # logging.info("New team finalize:"+str(n)+"="+str(tid))
     q("UPDATE 'Teams' SET tid = '"+str(tid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
 
 def tdbNewAssignmentFinalize(n,aid,lastEditEpoch):
-    # print("New assignment finalize:"+str(n)+"="+str(aid))
+    # logging.info("New assignment finalize:"+str(n)+"="+str(aid))
     q("UPDATE 'Assignments' SET aid = '"+str(aid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
 
 def tdbNewPairingFinalize(n,pid,lastEditEpoch):
-    # print("New pairing finalize:"+str(n)+"="+str(pid))
+    # logging.info("New pairing finalize:"+str(n)+"="+str(pid))
     q("UPDATE 'Pairings' SET pid = '"+str(pid)+"', LastEditEpoch = '"+str(lastEditEpoch)+"' WHERE n = '"+str(n)+"';")
 
 # no need to finalize history entries:
@@ -357,7 +358,7 @@ def tdbNewPairingFinalize(n,pid,lastEditEpoch):
 #  request handler on the server will make the new history entry.
 
 # def tdbNewHistoryEntryFinalize(n,hid,epoch):
-#     # print("New pairing finalize:"+str(n)+"="+str(pid))
+#     # logging.info("New pairing finalize:"+str(n)+"="+str(pid))
 #     q("UPDATE 'History' SET hid = '"+str(hid)+"', Epoch = '"+str(epoch)+"' WHERE n = '"+str(n)+"';")
 
 # tdbHome - return a welcome message to verify that this code is running
@@ -369,9 +370,9 @@ def tdbHome():
 # team getters
 def tdbGetTeamIDByName(teamName):
     query="SELECT tid FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("tid",None)
     else:
@@ -379,9 +380,9 @@ def tdbGetTeamIDByName(teamName):
 
 def tdbGetTeamNameByID(tid):
     query="SELECT TeamName FROM 'Teams' WHERE tid='"+str(tid)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("TeamName",None)
     else:
@@ -389,9 +390,9 @@ def tdbGetTeamNameByID(tid):
 
 def tdbGetTeamStatusByName(teamName):
     query="SELECT TeamStatus FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("TeamStatus",None)
     else:
@@ -399,9 +400,9 @@ def tdbGetTeamStatusByName(teamName):
 
 def tdbGetTeamResourceByName(teamName):
     query="SELECT Resource FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("Resource",None)
     else:
@@ -409,9 +410,9 @@ def tdbGetTeamResourceByName(teamName):
 
 def tdbGetTeamMedicalByName(teamName):
     query="SELECT Medical FROM 'Teams' WHERE TeamName='"+str(teamName)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("Medical",None)
     else:
@@ -420,9 +421,9 @@ def tdbGetTeamMedicalByName(teamName):
 # assignment getters
 def tdbGetAssignmentNameByID(aid):
     query="SELECT AssignmentName FROM 'Assignments' WHERE aid='"+str(aid)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("AssignmentName",None)
     else:
@@ -430,9 +431,9 @@ def tdbGetAssignmentNameByID(aid):
 
 def tdbGetAssignmentIDByName(assignmentName):
     query="SELECT aid FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("aid",None)
     else:
@@ -440,9 +441,9 @@ def tdbGetAssignmentIDByName(assignmentName):
 
 def tdbGetAssignmentStatusByName(assignmentName):
     query="SELECT AssignmentStatus FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("AssignmentStatus",None)
     else:
@@ -450,9 +451,9 @@ def tdbGetAssignmentStatusByName(assignmentName):
 
 def tdbGetAssignmentIntendedResourceByName(assignmentName):
     query="SELECT IntendedResource FROM 'Assignments' WHERE AssignmentName='"+str(assignmentName)+"';"
-    # print("query:"+query)
+    # logging.info("query:"+query)
     r=q(query)
-    # print("response:"+str(r))
+    # logging.info("response:"+str(r))
     if type(r) is list and len(r)>0 and type(r[0]) is dict:
         return r[0].get("IntendedResource",None)
     else:
@@ -475,7 +476,7 @@ def tdbGetTeams(tid=None,since=None):
 #    to create the teams view RecycleView data, or, to generate the html table
 #    for downstream html views i.e. pushed using websockets
 def tdbGetTeamsView():
-    # print('****************** tdbGetTeamsView called')
+    # logging.info('****************** tdbGetTeamsView called')
     teamsList=[]
     tdbTeams=tdbGetTeams()
     tdbPairings=tdbGetPairings()
@@ -493,7 +494,7 @@ def tdbGetTeamsView():
             entry['TeamStatus'],
             entry['Resource'],
             ','.join(previousAssignments) or '--'])
-    # print('teamsList at end of tdbGetTeamsView:'+str(teamsList))
+    # logging.info('teamsList at end of tdbGetTeamsView:'+str(teamsList))
     return teamsList
 
 def tdbGetMedicalTeams():
@@ -556,7 +557,7 @@ def tdbGetAssignmentsView():
         current=[]
         pairings=[x for x in tdbPairings if x['aid']==aid] # pairings that include this assignment
         if pairings:
-            print("  pairings:"+str(pairings))
+            logging.info("  pairings:"+str(pairings))
             for pairing in pairings:
                 if pairing['PairingStatus']=='PREVIOUS':
                     previousAssignments.append([assignmentName,pairing['NameSave'],'COMPLETED',pairing['ResourceSave']])
@@ -609,7 +610,7 @@ def tdbGetPairingIDByNames(assignmentName,teamName,currentOnly=False,previousOnl
         return None
 
 def tdbSetPairingStatusByID(pid,status):
-    # print("tdbSetPairingStatusByID called: pid="+str(pid)+" status="+str(status))
+    # logging.info("tdbSetPairingStatusByID called: pid="+str(pid)+" status="+str(status))
     [assignmentName,teamName]=tdbGetPairingNamesByID(pid)
     [aid,tid]=tdbGetPairingIDsByID(pid)
     if host:
@@ -624,7 +625,7 @@ def tdbSetPairingStatusByID(pid,status):
         tdbUpdateLastEditEpoch(pid=pid)
         validate=r[0]
         tdbPushTables()
-        # print("response in tdbSetPairingStatusByID:"+str(r))
+        # logging.info("response in tdbSetPairingStatusByID:"+str(r))
         return {'validate':validate}
     else:
         return {'error':'Query did not return a value'}
@@ -747,7 +748,7 @@ def tdbDeleteTeam(tid,push=True):
 
 def tdbUpdateLastEditEpoch(tid=None,aid=None,pid=None):
     if not tid and not aid and not pid:
-        print("tdbUpdateLastEditEpoch called with no arguments; nothing to do")
+        logging.info("tdbUpdateLastEditEpoch called with no arguments; nothing to do")
         return
     t=round(time.time(),2)
     if tid:

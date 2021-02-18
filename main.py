@@ -235,7 +235,7 @@ class assignmentTrackerApp(App):
         self.assignedAssignmentsCount=0
         self.unassignedAssignmentsCount=0
 
-        self.lanServer="https://192.168.1.20:5000"
+        self.lanServer="http://192.168.1.20:5000"
         # self.cloudServer="http://127.0.0.1:5000" # localhost, for development
         self.cloudServer="https://nccaves.pythonanywhere.com"
         self.localhostServer="http://127.0.0.1:5000"
@@ -326,7 +326,7 @@ class assignmentTrackerApp(App):
                 background_color=(0,0,0,0.5))
         button=Button(text='Join existing incident')
         box.add_widget(button)
-        button.bind(on_release=partial(self.cloudJoin,False))
+        button.bind(on_release=partial(self.join,False))
         button.bind(on_release=self.joinPopup_.dismiss)
         button=Button(text='Start a new incident')
         box.add_widget(button)
@@ -359,7 +359,7 @@ class assignmentTrackerApp(App):
         okCancelBox=BoxLayout(orientation='horizontal',size_hint_y=None,height=50)
         def newIncidentAccept(*args):
             self.stsUrl=stsUrlField.text
-            self.cloudJoin(True)
+            self.join(True)
         okButton.bind(on_release=newIncidentAccept)
         okButton.bind(on_release=popup.dismiss)
         okButton.bind(on_release=self.joinPopup_.dismiss)
@@ -427,6 +427,15 @@ class assignmentTrackerApp(App):
     def newPairingPopup(self,assignmentName,teamName):
         self.textpopup(text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\n'+NEW_PAIRING_POPUP_TEXT)
 
+    def join(self,init=False,*args):
+        Logger.info("called join; init="+str(init))
+        if self.lan:
+            self.lanJoin(init=init)
+        elif self.cloud:
+            self.cloudJoin(init=init)
+        else:
+            Logger.error("neither LAN nor cloud responded; cannot join.")
+
     def cloudJoin(self,init=False,*args):
         Logger.info("called cloudJoin; init="+str(init))
         if self.cloud:
@@ -443,6 +452,20 @@ class assignmentTrackerApp(App):
                 self.stsSync()
             self.sync(since=0)
             Clock.schedule_interval(self.sync,5) # start syncing every 5 seconds
+
+    def lanJoin(self,init=False):
+        if self.lan:
+            d={'NodeName':self.nodeName}
+            if init:
+                d['Init']=True
+            self.lanRequest('api/v1/join','POST',d,timeout=5) # make this a blocking call
+
+    def localhostJoin(self,init=False):
+        if self.localhost:
+            d={'NodeName':self.nodeName}
+            if init:
+                d['Init']=True
+            self.localhostRequest('api/v1/join','POST',d,timeout=5) # make this a blocking call
 
     def setSts(self):
         url=self.stsUrl
@@ -516,13 +539,6 @@ class assignmentTrackerApp(App):
                             (a['status'] in ['COMPLETED'] and status not in ['COMPLETED'])):
                         self.textpopup('WARNING: SARTopo assignment '+a['letter']+' status mismatch:\nSARTopo status = '+a['status']+'\nAssignmentTracker status = '+status+'\n\nPlease change status setting(s) as needed.')
         self.redraw()
-
-    def localhostJoin(self,init=False):
-        if self.localhost:
-            d={'NodeName':self.nodeName}
-            if init:
-                d['Init']=True
-            self.localhostRequest('api/v1/join','POST',d,timeout=5) # make this a blocking call
 
 # generic host-agnostic request and handlers
 
