@@ -1117,13 +1117,25 @@ class assignmentTrackerApp(App):
         self.sm.current='newTeamScreen'
         self.screenStack.append('newTeamScreen')
 
-    def showNewTeamScreenFromNewPairingScreen(self,*args):
-        Logger.info('showNewTeamScreenFromNewPairingScreen called')
+    def showNewUnknownScreenFromNewPairingScreen(self,*args):
+        Logger.info('showNewUnknownScreenFromNewPairingScreen called')
         Logger.info("screenStack: "+str(self.screenStack))
-        self.updateNewTeamNameSpinner()
-        self.newTeamScreen.ids.resourceSpinner.text=self.newPairingScreen.ids.resourceNameLabel.text
-        self.sm.current='newTeamScreen'
-        self.screenStack.append('newPairingScreen')
+        if self.screenStack[1]=='assignmentsScreen':
+            self.updateNewTeamNameSpinner()
+            self.newTeamScreen.ids.resourceSpinner.text=self.newPairingScreen.ids.resourceNameLabel.text
+            self.sm.current='newTeamScreen'
+            self.screenStack.append('newPairingScreen')
+        else:
+            self.sm.current='newAssignmentScreen'
+            self.screenStack.append('newPairingScreen')
+
+    # def showNewTeamScreenFromNewPairingScreen(self,*args):
+    #     Logger.info('showNewTeamScreenFromNewPairingScreen called')
+    #     Logger.info("screenStack: "+str(self.screenStack))
+    #     self.updateNewTeamNameSpinner()
+    #     self.newTeamScreen.ids.resourceSpinner.text=self.newPairingScreen.ids.resourceNameLabel.text
+    #     self.sm.current='newTeamScreen'
+    #     self.screenStack.append('newPairingScreen')
 
     def showNewAssignment(self,*args):
         Logger.info('showNewAssignment called')
@@ -1135,11 +1147,12 @@ class assignmentTrackerApp(App):
     def showNewPairing(self):
         Logger.info("showNewPairing called")
         Logger.info("screenStack: "+str(self.screenStack))
-        if self.screenStack[-2]=='teamsScreen': # team=fixed, assignment=selectable
+        if self.screenStack[1]=='teamsScreen': # team=fixed, assignment=selectable
             teamName=self.pairingDetailScreen.ids.teamNameLabel.text
             self.newPairingScreen.ids.knownLabel.text='Team:'
             self.newPairingScreen.ids.knownNameLabel.text=teamName
             self.newPairingScreen.ids.resourceLabel.text='Resource:'
+            self.newPairingScreen.ids.newUnknownButton.text='Create new assignment'
             resource=tdbGetTeamResourceByName(teamName)
             self.newPairingScreen.ids.resourceNameLabel.text=resource
             status=tdbGetTeamStatusByName(teamName)
@@ -1199,6 +1212,7 @@ class assignmentTrackerApp(App):
             self.newPairingScreen.ids.knownLabel.text='Assignment:'
             self.newPairingScreen.ids.knownNameLabel.text=assignmentName
             self.newPairingScreen.ids.resourceLabel.text='Intended For:'
+            self.newPairingScreen.ids.newUnknownButton.text='Create new team'
             intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
             self.newPairingScreen.ids.resourceNameLabel.text=intendedResource
             status=tdbGetAssignmentStatusByName(assignmentName)

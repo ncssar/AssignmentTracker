@@ -614,7 +614,7 @@
         BoxLayout:
             orientation: 'horizontal'
             Label:
-                text: 'Team Name:'
+                text: 'Assignment Name:'
             Spinner:
                 id: nameSpinner
                 text: 'AA'
@@ -693,10 +693,10 @@
                 text: '101'
                 values: ['101','102']
         Button:
-            text: 'Create new team'
-            id: newTeamButton
+            text: 'Create new unknown'
+            id: newUnknownButton
             size_hint_y: 0.1
-            on_press: app.showNewTeamScreenFromNewPairingScreen()
+            on_press: app.showNewUnknownScreenFromNewPairingScreen()
         Button:
             text: 'OK'
             id: pairButton
