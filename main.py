@@ -178,6 +178,7 @@ class assignmentTrackerApp(App):
         self.pairingHistoryRVList=[1,2,3,4,5]
         self.apiOKText="<h1>AssignmentTracker Database API</h1>"
         self.lastSyncTimeStamp=0
+        self.syncInterval=5
         self.resourceTypes=[ # matches sartopo assignment resource choices
             'GROUND',
             'GROUND-1',
@@ -197,6 +198,10 @@ class assignmentTrackerApp(App):
         self.stsConfigpath=('C:\\Users\\caver\\Documents\\GitHub\\sts_caver456.ini')
         self.stsUrl=None
         self.sts=None
+        self.newTeamCreatedFromNewPairing=None
+        self.screenStack=['start']
+        self.lastPairingDetailTeamName=None
+        self.lastPairingDetailAssignmentName=None
 
         self.nodeName='OBSERVER'
         self.teamNamePool=list(map(str,range(101,200)))
@@ -283,6 +288,16 @@ class assignmentTrackerApp(App):
         Logger.info("LAN:"+str(self.lan)+" cloud:"+str(self.cloud)+" localhost:"+str(self.localhost))
         self.initPopup.dismiss()
 
+        if self.lan:
+            self.connIconSrc='./img/lan-letters-icon-16.png'
+        elif self.cloud:
+            self.connIconSrc='./img/www-letters-icon-16.png'
+        elif self.localhost:
+            self.connIconSrc='./img/localhost.png'
+        
+        self.teamsScreen.ids.deviceHeader.ids.connButton.background_normal=self.connIconSrc
+        self.assignmentsScreen.ids.deviceHeader.ids.connButton.background_normal=self.connIconSrc
+
         if not (self.lan or self.cloud or self.localhost):
             Logger.error("ABORTING - no hosts were found.")
             sys.exit()
@@ -324,6 +339,7 @@ class assignmentTrackerApp(App):
                 content=box,
                 size_hint=(0.8,0.2),
                 background_color=(0,0,0,0.5))
+        self.joinPopup_.ids.iconBox.add_widget(Image(source=self.connIconSrc,width=30,size_hint_x=None))
         button=Button(text='Join existing incident')
         box.add_widget(button)
         button.bind(on_release=partial(self.join,False))
@@ -433,8 +449,10 @@ class assignmentTrackerApp(App):
             self.lanJoin(init=init)
         elif self.cloud:
             self.cloudJoin(init=init)
+        elif self.localhost:
+            self.localhostJoin(init=init)
         else:
-            Logger.error("neither LAN nor cloud responded; cannot join.")
+            Logger.error("neither LAN nor cloud nor localhost responded; cannot join.")
 
     def cloudJoin(self,init=False,*args):
         Logger.info("called cloudJoin; init="+str(init))
@@ -451,7 +469,7 @@ class assignmentTrackerApp(App):
                 self.setSts()
                 self.stsSync()
             self.sync(since=0)
-            Clock.schedule_interval(self.sync,5) # start syncing every 5 seconds
+            self.syncTimer=Clock.schedule_interval(self.sync,self.syncInterval) # start syncing every 5 seconds
 
     def lanJoin(self,init=False):
         if self.lan:
@@ -509,36 +527,37 @@ class assignmentTrackerApp(App):
     #    - if intended resource is different than tracker: update tracker to match sartopo
     #    - if status is different than tracker: show a warning dialog
     def stsSync(self):
-        j=self.sts.getFeatures('Assignment')
-        print("sartopo assignments json:"+json.dumps(j,indent=2))
-        self.sartopoAssignments=[]
-        for a in j:
-            d={}
-            ap=a['properties']
-            ag=a['geometry']
-            d['letter']=ap['letter']
-            d['id']=a['id']
-            d['type']=ag['type'] # LineString or Polygon
-            d['resource']=ap.get('resourceType','GROUND')
-            d['status']=ap['status']
-            self.sartopoAssignments.append(d)
-        print("assignments from sartopo: "+str(self.sartopoAssignments))
-        print("assignmentsList: "+str(self.assignmentsList))
-        if '' in [x['letter'] for x in self.sartopoAssignments]:
-            self.textpopup('WARNING: Unnamed (unlettered) SARTopo Assignments exist on the map.  Only named assignments will be imported to AssignmentTracker.')
-        for a in self.sartopoAssignments:
-            if a['letter']!='':
-                if a['letter'] not in [x[0] for x in self.assignmentsList]:
-                    self.newAssignment(name=a['letter'],intendedResource=a['resource'],sid=a['id'])
-                else:
-                    if a['resource']!=tdbGetAssignmentIntendedResourceByName(a['letter']):
-                        tdbSetAssignmentIntendedResourceByName(a['letter'],a['resource'])
-                    status=tdbGetAssignmentStatusByName(a['letter'])
-                    if ((a['status']=='INPROGRESS' and status in ['UNASSIGNED','ASSIGNED','COMPLETED']) or
-                            (a['status'] in ['DRAFT','PREPARED'] and status in ['WORKING','ENROUTE TO IC','DEBRIEFING','COMPLETED']) or
-                            (a['status'] in ['COMPLETED'] and status not in ['COMPLETED'])):
-                        self.textpopup('WARNING: SARTopo assignment '+a['letter']+' status mismatch:\nSARTopo status = '+a['status']+'\nAssignmentTracker status = '+status+'\n\nPlease change status setting(s) as needed.')
-        self.redraw()
+        if self.sts:
+            j=self.sts.getFeatures('Assignment')
+            print("sartopo assignments json:"+json.dumps(j,indent=2))
+            self.sartopoAssignments=[]
+            for a in j:
+                d={}
+                ap=a['properties']
+                ag=a['geometry']
+                d['letter']=ap['letter']
+                d['id']=a['id']
+                d['type']=ag['type'] # LineString or Polygon
+                d['resource']=ap.get('resourceType','GROUND')
+                d['status']=ap['status']
+                self.sartopoAssignments.append(d)
+            print("assignments from sartopo: "+str(self.sartopoAssignments))
+            print("assignmentsList: "+str(self.assignmentsList))
+            if '' in [x['letter'] for x in self.sartopoAssignments]:
+                self.textpopup('WARNING: Unnamed (unlettered) SARTopo Assignments exist on the map.  Only named assignments will be imported to AssignmentTracker.')
+            for a in self.sartopoAssignments:
+                if a['letter']!='':
+                    if a['letter'] not in [x[0] for x in self.assignmentsList]:
+                        self.newAssignment(name=a['letter'],intendedResource=a['resource'],sid=a['id'])
+                    else:
+                        if a['resource']!=tdbGetAssignmentIntendedResourceByName(a['letter']):
+                            tdbSetAssignmentIntendedResourceByName(a['letter'],a['resource'])
+                        status=tdbGetAssignmentStatusByName(a['letter'])
+                        if ((a['status']=='INPROGRESS' and status in ['UNASSIGNED','ASSIGNED','COMPLETED']) or
+                                (a['status'] in ['DRAFT','PREPARED'] and status in ['WORKING','ENROUTE TO IC','DEBRIEFING','COMPLETED']) or
+                                (a['status'] in ['COMPLETED'] and status not in ['COMPLETED'])):
+                            self.textpopup('WARNING: SARTopo assignment '+a['letter']+' status mismatch:\nSARTopo status = '+a['status']+'\nAssignmentTracker status = '+status+'\n\nPlease change status setting(s) as needed.')
+            self.redraw()
 
 # generic host-agnostic request and handlers
 
@@ -685,7 +704,7 @@ class assignmentTrackerApp(App):
     def sync(self,*args,since=None):
         since=since or self.lastSyncTimeStamp
         # Logger.info("sync called: lastSyncTimeStamp="+str(since))
-        self.sendRequest("api/v1/since/"+str(int(since)),on_success=self.on_sync_success)
+        self.sendRequest("api/v1/since/"+str(int(since)),on_success=self.on_sync_success,on_failure=self.on_sync_failure,on_error=self.on_sync_failure)
 
     def on_sync_success(self,request,result):
         # Logger.info("  on_sync_success called:"+str(result))
@@ -788,6 +807,11 @@ class assignmentTrackerApp(App):
         elif self.sm.current=='pairingDetailScreen' and len(result['History'])>0:
             self.pairingDetailHistoryUpdate()
 
+    def on_sync_failure(self,request,result):
+        Logger.info("sync failure:"+str(result))
+        self.syncTimer.cancel()
+        self.textpopup("SYNC FAILURE","Sync failure.  The server is not responding to sync requests.  This node is no longer part of the AssignmentTracker incident.\n\nAborting. You can try to restart and join after the issue is remedied.",on_release=sys.exit)
+
     def newTeam(self,name=None,resource=None,doToast=True):
         name=name or self.newTeamScreen.ids.nameSpinner.text
         if name in self.teamNamePool:
@@ -802,6 +826,10 @@ class assignmentTrackerApp(App):
         self.sendRequest("api/v1/teams/new","POST",{'TeamName':name,'Resource':resource,'n':n},on_success=self.on_newTeam_success)
         self.updateNewTeamNameSpinner()
         self.buildLists()
+        if self.screenStack[-1]=='newPairingScreen':
+            self.newTeamCreatedFromNewPairing=name+' : '+resource+' : UNASSIGNED'
+            Logger.info('setting newTeamCreatedFromNewPairing to '+str(self.newTeamCreatedFromNewPairing))
+            self.showPrevious() # only go to the previous screen if this was nested
         if doToast:
             toast('Team '+str(name)+' ['+str(resource)+'] created')
 
@@ -918,6 +946,7 @@ class assignmentTrackerApp(App):
 
     def showTeams(self,*args):
         Logger.info('showTeams called')
+        Logger.info("screenStack: "+str(self.screenStack))
         self.buildLists()
         # recycleview needs a list of dictionaries; the view divides into rows every nth element
         self.teamsScreen.teamsRVData=[]
@@ -933,9 +962,15 @@ class assignmentTrackerApp(App):
                 self.teamsScreen.teamsRVData.append(d)
         self.sm.transition=NoTransition()
         self.sm.current='teamsScreen'
+        # if previous screen was assignments, just replace it in the stack; otherwise, append
+        if self.screenStack[-1]=='assignmentsScreen':
+            self.screenStack[-1]='teamsScreen'
+        else:
+            self.screenStack.append('teamsScreen')
 
     def showAssignments(self,*args):
         Logger.info("showAssignments called")
+        Logger.info("screenStack: "+str(self.screenStack))
         self.buildLists()
         # recycleview needs a list of dictionaries; the view divides into rows every nth element
         self.assignmentsScreen.assignmentsRVData=[]
@@ -951,6 +986,11 @@ class assignmentTrackerApp(App):
                 self.assignmentsScreen.assignmentsRVData.append(d)
         self.sm.transition=NoTransition()
         self.sm.current='assignmentsScreen'
+        # if previous screen was teams, just replace it in the stack; otherwise, append
+        if self.screenStack[-1]=='teamsScreen':
+            self.screenStack[-1]='assignmentsScreen'
+        else:
+            self.screenStack.append('assignmentsScreen')
 
     def updateCounts(self):
         Logger.info('updateCounts called')
@@ -974,6 +1014,9 @@ class assignmentTrackerApp(App):
 
     def showPairingDetail(self,assignmentName=None,teamName=None):
         Logger.info('showPairingDetail called:'+str(assignmentName)+' : '+str(teamName))
+        self.lastPairingDetailAssignmentName=assignmentName
+        self.lastPairingDetailTeamName=teamName
+        Logger.info("screenStack: "+str(self.screenStack))
         if assignmentName:
             if teamName: # assignment and team specified - it's a pairing
                 pid=tdbGetPairingIDByNames(assignmentName,teamName)
@@ -986,7 +1029,7 @@ class assignmentTrackerApp(App):
                     status='COMPLETED'
                     self.pairingDetailScreen.ids.statusBox.visible=False
                 self.pairingDetailScreen.ids.intendedResourceLabel.text=''
-                if self.previousScreen=='assignmentsScreen':
+                if self.screenStack[-1]=='assignmentsScreen':
                     self.pairingDetailScreen.ids.pairButton.text='Assign another team to this assignment'
                 else:
                     self.pairingDetailScreen.ids.pairButton.text='Assign this team to another assignment'
@@ -1026,12 +1069,21 @@ class assignmentTrackerApp(App):
         self.pairingDetailStatusUpdate()
         self.pairingDetailHistoryUpdate()
         self.sm.current='pairingDetailScreen'
+        self.screenStack.append('pairingDetailScreen')
 
     def showPrevious(self):
-        if self.previousScreen=='teamsScreen':
+        Logger.info('showPrevious called: screenStack at start:'+str(self.screenStack))
+        prev=self.screenStack.pop()
+        prev=self.screenStack.pop() # pop twice to get the previous screen
+        if prev=='teamsScreen':
             self.showTeams()
-        elif self.previousScreen=='assignmentsScreen':
+        elif prev=='assignmentsScreen':
             self.showAssignments()
+        elif prev=='newPairingScreen':
+            self.showNewPairing()
+        elif prev=='pairingDetailScreen':
+            self.showPairingDetail(self.lastPairingDetailAssignmentName,self.lastPairingDetailTeamName)
+        Logger.info('showPrevious called: screenStack at end:'+str(self.screenStack))
 
     def pairingDetailStatusUpdate(self):
         teamName=self.pairingDetailBeingShown[1]
@@ -1060,62 +1112,30 @@ class assignmentTrackerApp(App):
       
     def showNewTeam(self,*args):
         Logger.info('showNewTeam called')
+        Logger.info("screenStack: "+str(self.screenStack))
         self.updateNewTeamNameSpinner()
         self.sm.current='newTeamScreen'
+        self.screenStack.append('newTeamScreen')
+
+    def showNewTeamScreenFromNewPairingScreen(self,*args):
+        Logger.info('showNewTeamScreenFromNewPairingScreen called')
+        Logger.info("screenStack: "+str(self.screenStack))
+        self.updateNewTeamNameSpinner()
+        self.newTeamScreen.ids.resourceSpinner.text=self.newPairingScreen.ids.resourceNameLabel.text
+        self.sm.current='newTeamScreen'
+        self.screenStack.append('newPairingScreen')
 
     def showNewAssignment(self,*args):
         Logger.info('showNewAssignment called')
+        Logger.info("screenStack: "+str(self.screenStack))
         self.updateNewAssignmentNameSpinner()
         self.sm.current='newAssignmentScreen'
+        self.screenStack.append('newAssignmentScreen')
 
     def showNewPairing(self):
-        if self.previousScreen=='assignmentsScreen': # assignment=fixed, team=selectable
-            assignmentName=self.pairingDetailScreen.ids.assignmentNameLabel.text
-            self.newPairingScreen.ids.knownLabel.text='Assignment:'
-            self.newPairingScreen.ids.knownNameLabel.text=assignmentName
-            self.newPairingScreen.ids.resourceLabel.text='Intended For:'
-            intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
-            self.newPairingScreen.ids.resourceNameLabel.text=intendedResource
-            status=tdbGetAssignmentStatusByName(assignmentName)
-            if status not in ['UNASSIGNED','COMPLETED']:
-                status='ASSIGNED to:\n'
-                pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
-                # Logger.info('  pairings:'+str(pairings))
-                tids=[pairing.get('tid',None) for pairing in pairings]
-                # Logger.info('  tids:'+str(tids))
-                teamNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
-                # Logger.info('  teamNames:'+str(teamNames))
-                status+=','.join(teamNames)
-            self.newPairingScreen.ids.currentlyLabel.text=status
-            # Logger.info("teamsList:"+str(self.teamsList))
-            part1=[] # unassigned teams, same resource type as intended resource
-            part2=[] # unassigned teams, other resource types
-            part3=[] # assigned teams, same resource type as intended resource
-            part4=[] # assigned teams, other resource types
-            for team in self.teamsList:
-                entryText=team[0]+' : '+team[3]
-                if team[2]=='UNASSIGNED':
-                    entryText+=' : UNASSIGNED'
-                    if team[3]==intendedResource:
-                        part1.append(entryText)
-                    else:
-                        part2.append(entryText)
-                elif assignmentName not in team[1].split(','): # don't list team(s) already paired to this assignment!
-                    entryText+=' : ASSIGNED to '+team[1]
-                    if team[3]==intendedResource:
-                        part3.append(entryText)
-                    else:
-                        part4.append(entryText)
-            theList=part1+part2+part3+part4
-            self.newPairingScreen.ids.unknownSpinner.values=theList
-            if theList:
-                self.newPairingScreen.ids.unknownSpinner.text=theList[0]
-                self.newPairingScreen.ids.pairButton.disabled=False
-            else:
-                # could show a warning here and disallow pairing before the screen raises
-                self.newPairingScreen.ids.unknownSpinner.text='No teams available'
-                self.newPairingScreen.ids.pairButton.disabled=True
-        else: # team=fixed, assignment=selectable
+        Logger.info("showNewPairing called")
+        Logger.info("screenStack: "+str(self.screenStack))
+        if self.screenStack[-2]=='teamsScreen': # team=fixed, assignment=selectable
             teamName=self.pairingDetailScreen.ids.teamNameLabel.text
             self.newPairingScreen.ids.knownLabel.text='Team:'
             self.newPairingScreen.ids.knownNameLabel.text=teamName
@@ -1173,7 +1193,58 @@ class assignmentTrackerApp(App):
                 # could show a warning here and disallow pairing before the screen raises
                 self.newPairingScreen.ids.unknownSpinner.text='No assignments available'
                 self.newPairingScreen.ids.pairButton.disabled=True
+        else: # previous screen was either the assignments screen or teams-from-new-pairing:
+            # assignment=fixed, team=selectable, but pre-select the new team if previous screen was teams-from-new-pairing
+            assignmentName=self.pairingDetailScreen.ids.assignmentNameLabel.text
+            self.newPairingScreen.ids.knownLabel.text='Assignment:'
+            self.newPairingScreen.ids.knownNameLabel.text=assignmentName
+            self.newPairingScreen.ids.resourceLabel.text='Intended For:'
+            intendedResource=tdbGetAssignmentIntendedResourceByName(assignmentName)
+            self.newPairingScreen.ids.resourceNameLabel.text=intendedResource
+            status=tdbGetAssignmentStatusByName(assignmentName)
+            if status not in ['UNASSIGNED','COMPLETED']:
+                status='ASSIGNED to:\n'
+                pairings=tdbGetPairingsByAssignment(tdbGetAssignmentIDByName(assignmentName),currentOnly=True)
+                # Logger.info('  pairings:'+str(pairings))
+                tids=[pairing.get('tid',None) for pairing in pairings]
+                # Logger.info('  tids:'+str(tids))
+                teamNames=[tdbGetTeams(tid)[0]['TeamName'] for tid in tids]
+                # Logger.info('  teamNames:'+str(teamNames))
+                status+=','.join(teamNames)
+            self.newPairingScreen.ids.currentlyLabel.text=status
+            # Logger.info("teamsList:"+str(self.teamsList))
+            part1=[] # unassigned teams, same resource type as intended resource
+            part2=[] # unassigned teams, other resource types
+            part3=[] # assigned teams, same resource type as intended resource
+            part4=[] # assigned teams, other resource types
+            for team in self.teamsList:
+                entryText=team[0]+' : '+team[3]
+                if team[2]=='UNASSIGNED':
+                    entryText+=' : UNASSIGNED'
+                    if team[3]==intendedResource:
+                        part1.append(entryText)
+                    else:
+                        part2.append(entryText)
+                elif assignmentName not in team[1].split(','): # don't list team(s) already paired to this assignment!
+                    entryText+=' : ASSIGNED to '+team[1]
+                    if team[3]==intendedResource:
+                        part3.append(entryText)
+                    else:
+                        part4.append(entryText)
+            theList=part1+part2+part3+part4
+            self.newPairingScreen.ids.unknownSpinner.values=theList
+            if theList:
+                self.newPairingScreen.ids.unknownSpinner.text=theList[0]
+                self.newPairingScreen.ids.pairButton.disabled=False
+                if self.newTeamCreatedFromNewPairing is not None:
+                    self.newPairingScreen.ids.unknownSpinner.text=self.newTeamCreatedFromNewPairing
+            else:
+                # could show a warning here and disallow pairing before the screen raises
+                self.newPairingScreen.ids.unknownSpinner.text='No teams available'
+                self.newPairingScreen.ids.pairButton.disabled=True
         self.sm.current='newPairingScreen'
+        self.newTeamCreatedFromNewPairing=None
+        self.screenStack.append('newPairingScreen')
 
     def assignmentEdit(self):
         box=BoxLayout(orientation='vertical')
@@ -1391,7 +1462,7 @@ class SelectableLabel(RecycleDataViewBehavior, Label):
         if super(SelectableLabel, self).on_touch_down(touch):
             return True
         if self.collide_point(*touch.pos) and self.selectable:
-            theApp.previousScreen=theApp.sm.current
+            # theApp.screenStack.append(theApp.sm.current)
             if theApp.sm.current=='assignmentsScreen':
                 colCount=theApp.assignmentsScreen.ids.assignmentsLayout.cols
                 Logger.info("Assignments list item tapped: index="+str(self.index)+":"+str(theApp.assignmentsScreen.ids.assignmentsRV.data[self.index]))

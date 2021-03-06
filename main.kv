@@ -314,20 +314,33 @@
                 id: deviceLabel
                 text: 'N/A'
                 font_size: '50sp'
-        Button:
+        BoxLayout:
+            orientation: 'vertical'
             size_hint_x:None
-            size_hint_y:None
-            height:48
-            width:48
-            background_normal: './img/sartopo_refresh-48.png'
-            on_press: app.stsSync()
-        Button:
-            size_hint_x:None
-            size_hint_y:None
-            height:48
-            width:48
-            background_normal: './img/options-icon-white-48.png'
-            on_press: app.optionsPopup()
+            width:100
+            Button:
+                id: connButton
+                size_hint_x:None
+                size_hint_y:None
+                height:16
+                width:42
+                background_normal: './img/localhost.png'
+            BoxLayout:
+                orientation: 'horizontal'
+                Button:
+                    size_hint_x:None
+                    size_hint_y:None
+                    height:48
+                    width:48
+                    background_normal: './img/caltopo-refresh-48.png'
+                    on_press: app.stsSync()
+                Button:
+                    size_hint_x:None
+                    size_hint_y:None
+                    height:48
+                    width:48
+                    background_normal: './img/options-icon-white-48.png'
+                    on_press: app.optionsPopup()
 
 <TeamsScreen>:
     BoxLayout:
@@ -590,7 +603,7 @@
         Button:
             size_hint_y: 0.1
             text: 'Close'
-            on_press: app.showTeams()
+            on_press: app.showPrevious()
 
 <NewAssignmentScreen>:
     BoxLayout:
@@ -622,7 +635,7 @@
         Button:
             size_hint_y: 0.1
             text: 'Close'
-            on_press: app.showAssignments()
+            on_press: app.showPrevious()
 
 <NewPairingScreen>:
     BoxLayout:
@@ -679,6 +692,11 @@
                 id: unknownSpinner
                 text: '101'
                 values: ['101','102']
+        Button:
+            text: 'Create new team'
+            id: newTeamButton
+            size_hint_y: 0.1
+            on_press: app.showNewTeamScreenFromNewPairingScreen()
         Button:
             text: 'OK'
             id: pairButton
