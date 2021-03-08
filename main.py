@@ -199,7 +199,7 @@ class assignmentTrackerApp(App):
         self.stsUrl=None
         self.sts=None
         self.newTeamCreatedFromNewPairing=None
-        self.screenStack=['start']
+        self.newAssignmentCreatedFromNewPairing=None
         self.lastPairingDetailTeamName=None
         self.lastPairingDetailAssignmentName=None
 
@@ -248,6 +248,8 @@ class assignmentTrackerApp(App):
         self.container=BoxLayout(orientation='vertical')
         # self.container.add_widget(self.topbar)
         self.container.add_widget(self.sm)
+
+        self.screenStack=['start','teamsScreen']
 
         # do the rest of the startup after GUI is launched:
         #  (this method is recommended in some posts, and is more reliable
@@ -854,6 +856,10 @@ class assignmentTrackerApp(App):
         self.sendRequest("api/v1/assignments/new","POST",{'AssignmentName':name,'IntendedResource':intendedResource,'n':n,'sid':sid},on_success=self.on_newAssignment_success)
         self.updateNewAssignmentNameSpinner()
         self.buildLists()
+        if self.screenStack[-1]=='newPairingScreen':
+            self.newAssignmentCreatedFromNewPairing=name+' : '+intendedResource+' : UNASSIGNED'
+            Logger.info('setting newAssignmentCreatedFromNewPairing to '+str(self.newAssignmentCreatedFromNewPairing))
+            self.showPrevious() # only go to the previous screen if this was nested
         if doToast:
             toast('Assignment '+str(name)+' ['+str(intendedResource)+'] created')
 
@@ -909,6 +915,8 @@ class assignmentTrackerApp(App):
         self.textpopup(
                 title='New Pairing',
                 text='A new pairing has been created:\n  Assignment='+str(assignmentName)+'  Team='+str(teamName)+'\n\n'+NEW_PAIRING_POPUP_TEXT)
+        self.lastPairingDetailAssignmentName=assignmentName
+        self.lastPairingDetailTeamName=teamName
         self.showPrevious() # close the new pairing dialog after creating the pairing; not likely to need to pair another team
         # avoid sending multiple requests back to back, since this can create race conditions
         #  and html flickers with clients receiving multiple different websocket messages
@@ -960,13 +968,14 @@ class assignmentTrackerApp(App):
                 if cell in self.medicalTeams:
                     d['src']=self.medicalIconSrc
                 self.teamsScreen.teamsRVData.append(d)
-        self.sm.transition=NoTransition()
-        self.sm.current='teamsScreen'
         # if previous screen was assignments, just replace it in the stack; otherwise, append
         if self.screenStack[-1]=='assignmentsScreen':
+            self.sm.transition=NoTransition()
             self.screenStack[-1]='teamsScreen'
-        else:
+        elif self.screenStack[-1]!='teamsScreen':
             self.screenStack.append('teamsScreen')
+        self.sm.current='teamsScreen'
+        self.sm.transition=SlideTransition(direction='left')
 
     def showAssignments(self,*args):
         Logger.info("showAssignments called")
@@ -984,13 +993,14 @@ class assignmentTrackerApp(App):
                 if cell in self.medicalTeams:
                     d['src']=self.medicalIconSrc
                 self.assignmentsScreen.assignmentsRVData.append(d)
-        self.sm.transition=NoTransition()
-        self.sm.current='assignmentsScreen'
         # if previous screen was teams, just replace it in the stack; otherwise, append
         if self.screenStack[-1]=='teamsScreen':
+            self.sm.transition=NoTransition()
             self.screenStack[-1]='assignmentsScreen'
-        else:
+        elif self.screenStack[-1]!='assignmentsScreen':
             self.screenStack.append('assignmentsScreen')
+        self.sm.current='assignmentsScreen'
+        self.sm.transition=SlideTransition(direction='left')
 
     def updateCounts(self):
         Logger.info('updateCounts called')
@@ -1073,16 +1083,35 @@ class assignmentTrackerApp(App):
 
     def showPrevious(self):
         Logger.info('showPrevious called: screenStack at start:'+str(self.screenStack))
-        prev=self.screenStack.pop()
-        prev=self.screenStack.pop() # pop twice to get the previous screen
-        if prev=='teamsScreen':
-            self.showTeams()
-        elif prev=='assignmentsScreen':
-            self.showAssignments()
-        elif prev=='newPairingScreen':
-            self.showNewPairing()
-        elif prev=='pairingDetailScreen':
-            self.showPairingDetail(self.lastPairingDetailAssignmentName,self.lastPairingDetailTeamName)
+        # keep the current screen open and show a popup until
+        #  all local database entries have received IDs from the host;
+        # any -1 ID means the host hasn't responded yet
+        def checkIDs(*args):
+            teams=tdbGetTeams()
+            assignments=tdbGetAssignments()
+            pairings=tdbGetPairings()
+            tids=[x['tid'] for x in teams]
+            aids=[x['aid'] for x in assignments]
+            pids=[x['pid'] for x in pairings]
+            if -1 in tids+aids+pids:
+                Logger.info('not yet')
+                return True # keep trying
+            else:
+                prev=self.screenStack.pop()
+                prev=self.screenStack.pop() # pop twice to get the previous screen
+                self.sm.transition=SlideTransition(direction='right')
+                if prev=='teamsScreen':
+                    self.showTeams()
+                elif prev=='assignmentsScreen':
+                    self.showAssignments()
+                elif prev=='newPairingScreen':
+                    self.showNewPairing()
+                elif prev=='pairingDetailScreen':
+                    self.showPairingDetail(self.lastPairingDetailAssignmentName,self.lastPairingDetailTeamName)
+                self.sm.transition=SlideTransition(direction='left')
+                Logger.info('ok to show previous')
+                return False # callback that returns false will cancel the scheduled event
+        Clock.schedule_interval(checkIDs,0.2)
         Logger.info('showPrevious called: screenStack at end:'+str(self.screenStack))
 
     def pairingDetailStatusUpdate(self):
@@ -1202,6 +1231,8 @@ class assignmentTrackerApp(App):
             if theList:
                 self.newPairingScreen.ids.unknownSpinner.text=theList[0]
                 self.newPairingScreen.ids.pairButton.disabled=False
+                if self.newAssignmentCreatedFromNewPairing is not None:
+                    self.newPairingScreen.ids.unknownSpinner.text=self.newAssignmentCreatedFromNewPairing
             else:
                 # could show a warning here and disallow pairing before the screen raises
                 self.newPairingScreen.ids.unknownSpinner.text='No assignments available'
@@ -1258,6 +1289,7 @@ class assignmentTrackerApp(App):
                 self.newPairingScreen.ids.pairButton.disabled=True
         self.sm.current='newPairingScreen'
         self.newTeamCreatedFromNewPairing=None
+        self.newAssignmentCreatedFromNewPairing=None
         self.screenStack.append('newPairingScreen')
 
     def assignmentEdit(self):
