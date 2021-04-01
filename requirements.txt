@@ -1,12 +1,21 @@
 # AssignmentTracker requirements.txt
+
+# ** On Windows, do this in a cmd shell opened
+#  as administrator, to avoid 'sdl2 module not found':
+#  https://github.com/kivy/kivy/issues/5677#issuecomment-389990608
+
 # usage: 'pip install -r requirements.txt'
 
-kivy
+# note, kivy.deps modules must be installed before kivy:
+
 docutils
+pillow
 pygments
 pypiwin32
-kivy_deps.sdl2
-kivy_deps.glew
+kivy.deps.sdl2
+kivy.deps.glew
+kivy
 certifi
 websocket-client
 websockets
+sartopo_python
